@@ -145,6 +145,10 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   // State for Products
   const [selectedSubcollectionId, setSelectedSubcollectionId] = useState('');
   const [products, setProducts] = useState([]);
+  const [allCollectionProducts, setAllCollectionProducts] = useState([]);
+  const [editProductRetailPrice, setEditProductRetailPrice] = useState('');
+  const [editProductGstRate, setEditProductGstRate] = useState('0');
+  const [editProductGstType, setEditProductGstType] = useState('exclusive');
   const [productName, setProductName] = useState(''); // New state for product name
   const [productCode, setProductCode] = useState('');
   const [productQuantity, setProductQuantity] = useState('');
@@ -835,6 +839,44 @@ useEffect(() => {
     setIsProductLoading(false);
   };
 
+  // Fetch every product in the selected main collection, across all subcollections and both destinations.
+  const fetchAllCollectionProducts = async () => {
+    if (!selectedMainCollectionId) { setAllCollectionProducts([]); return; }
+    setIsProductLoading(true);
+    try {
+      const subsSnap = await getDocs(collection(db, 'collections', selectedMainCollectionId, 'subcollections'));
+      const all = [];
+      for (const subDoc of subsSnap.docs) {
+        const subcollectionData = { id: subDoc.id, ...subDoc.data() };
+        const base = ['collections', selectedMainCollectionId, 'subcollections', subDoc.id];
+        const [websiteSnap, appSnap] = await Promise.all([
+          getDocs(collection(db, ...base, 'products')),
+          getDocs(collection(db, ...base, 'appProducts')),
+        ]);
+        const appendProduct = (d, destination) => {
+          const data = d.data();
+          all.push({
+            ...data, id: d.id, destination, subcollectionId: subDoc.id,
+            subcollectionName: subcollectionData.name || 'Unnamed subcollection', subcollectionData,
+            purchasePrice: data.purchasePrice ?? data.purchaseRate ?? subcollectionData.purchasePrice ?? subcollectionData.purchaseRate ?? 0,
+            purchaseRate: data.purchaseRate ?? data.purchasePrice ?? subcollectionData.purchaseRate ?? subcollectionData.purchasePrice ?? 0,
+            retailPrice: data.retailPrice ?? data.salePrice ?? data.price ?? subcollectionData.retailPrice ?? subcollectionData.salePrice ?? subcollectionData.price ?? 0,
+            salePrice: data.salePrice ?? data.retailPrice ?? data.price ?? subcollectionData.salePrice ?? subcollectionData.retailPrice ?? subcollectionData.price ?? 0,
+            gstRate: data.gstRate ?? data.gst_rate ?? subcollectionData.gstRate ?? 0,
+            gstType: data.gstType ?? data.gst_type ?? subcollectionData.gstType ?? 'exclusive',
+            quantity: data.quantity ?? data.current_stock ?? subcollectionData.quantity ?? subcollectionData.current_stock ?? 0,
+          });
+        };
+        websiteSnap.docs.forEach(d => appendProduct(d, 'products'));
+        appSnap.docs.forEach(d => appendProduct(d, 'appProducts'));
+      }
+      setAllCollectionProducts(all);
+    } catch (error) {
+      console.error('Error fetching all products for collection:', error);
+      alert('Could not load all products for this collection. Check the console for details.');
+    } finally { setIsProductLoading(false); }
+  };
+
   // UseEffects to trigger data fetching on dependency changes
   useEffect(() => {
     fetchMainCollections();
@@ -843,11 +885,19 @@ useEffect(() => {
   useEffect(() => {
     fetchSubcollections();
     setSelectedSubcollectionId('');
+    setAllCollectionProducts([]);
+    setShowProductForm(false);
+    setEditingProduct(null);
   }, [selectedMainCollectionId]);
 
   useEffect(() => {
     fetchProducts();
   }, [selectedSubcollectionId, selectedMainCollectionId]);
+
+  useEffect(() => {
+    if (activeSubTab === 'products' && productEntryMode === 'manage' && selectedMainCollectionId) fetchAllCollectionProducts();
+    else if (!selectedMainCollectionId) setAllCollectionProducts([]);
+  }, [selectedMainCollectionId, productEntryMode, activeSubTab]);
 
   // New: Fetches all orders
   useEffect(() => {
@@ -2159,7 +2209,11 @@ for (const product of newProducts) {
   };
 
   const startEditProduct = (product) => {
-    setEditingProduct(product);
+    const owningSubcollectionId = product.subcollectionId || selectedSubcollectionId;
+    const owningSubcollectionData = product.subcollectionData || selectedSubcollectionData;
+    if (owningSubcollectionId) setSelectedSubcollectionId(owningSubcollectionId);
+    if (owningSubcollectionData) setSelectedSubcollectionData(owningSubcollectionData);
+    setEditingProduct({ ...product, subcollectionId: owningSubcollectionId, subcollectionData: owningSubcollectionData });
     setProductName(product.productName || "");
     setProductCode(product.productCode || "");
 
@@ -2181,7 +2235,7 @@ for (const product of newProducts) {
 
     // Prices belong to the subcollection in the existing Firestore schema.
     // Only auto-created one-product subcollections are edited from this product form.
-    const savedPricing = selectedSubcollectionData?.tieredPricing || {};
+    const savedPricing = owningSubcollectionData?.tieredPricing || {};
     const nextPrices = PRICING_KEYS.reduce((acc, key) => {
       const tiers = Array.isArray(savedPricing[key]) ? savedPricing[key] : [];
       acc[key] = tiers.length ? String(tiers[0].price ?? '') : '';
@@ -2189,10 +2243,13 @@ for (const product of newProducts) {
     }, {});
     setEditProductPrices(nextPrices);
     setEditProductPurchaseRate(
-      selectedSubcollectionData?.purchaseRate !== undefined
-        ? String(selectedSubcollectionData.purchaseRate)
+      (product.purchasePrice ?? product.purchaseRate ?? owningSubcollectionData?.purchasePrice ?? owningSubcollectionData?.purchaseRate) !== undefined
+        ? String(product.purchasePrice ?? product.purchaseRate ?? owningSubcollectionData?.purchasePrice ?? owningSubcollectionData?.purchaseRate)
         : ''
     );
+    setEditProductRetailPrice(String(product.retailPrice ?? product.salePrice ?? product.price ?? owningSubcollectionData?.retailPrice ?? owningSubcollectionData?.salePrice ?? ''));
+    setEditProductGstRate(String(product.gstRate ?? product.gst_rate ?? owningSubcollectionData?.gstRate ?? 0));
+    setEditProductGstType(product.gstType ?? product.gst_type ?? owningSubcollectionData?.gstType ?? 'exclusive');
     setShowProductForm(true);
   };
 
@@ -2206,7 +2263,7 @@ for (const product of newProducts) {
         "collections",
         selectedMainCollectionId,
         "subcollections",
-        selectedSubcollectionId,
+        editingProduct.subcollectionId || selectedSubcollectionId,
         editingProduct.destination || "products",
         editingProduct.id
       );
@@ -2274,15 +2331,23 @@ for (const product of newProducts) {
         additionalImages: additionalImageUrls,    // ✅ what ProductCard expects
 
         quantity: finalQuantity,
+        current_stock: finalQuantity,
+        initialQuantity: Number(editingProduct.initialQuantity ?? finalQuantity),
         variations: finalVariations,
-
+        purchaseRate: Number(editProductPurchaseRate || 0),
+        purchasePrice: Number(editProductPurchaseRate || 0),
+        retailPrice: Number(editProductRetailPrice || 0),
+        salePrice: Number(editProductRetailPrice || 0),
+        price: Number(editProductRetailPrice || 0),
+        gstRate: Math.max(0, Number(editProductGstRate) || 0),
+        gstType: editProductGstType || 'exclusive',
         updatedAt: serverTimestamp(),
       };
 
       // Prepare and validate subcollection updates before writing either document.
       // Legacy shared subcollections are deliberately left untouched from product edit.
       let autoSubcollectionUpdate = null;
-      if (selectedSubcollectionData?.autoCreatedForProduct) {
+      if ((editingProduct.subcollectionData || selectedSubcollectionData)?.autoCreatedForProduct) {
         const missingPrices = PRICING_KEYS.filter(
           key => editProductPrices[key] === '' || !Number.isFinite(Number(editProductPrices[key])) || Number(editProductPrices[key]) < 0
         );
@@ -2294,7 +2359,7 @@ for (const product of newProducts) {
         }
 
         const tieredPricing = PRICING_KEYS.reduce((acc, key) => {
-          const existingTiers = selectedSubcollectionData?.tieredPricing?.[key];
+          const existingTiers = (editingProduct.subcollectionData || selectedSubcollectionData)?.tieredPricing?.[key];
           const firstTier = Array.isArray(existingTiers) && existingTiers.length ? existingTiers[0] : {};
           acc[key] = [{
             ...firstTier,
@@ -2305,25 +2370,30 @@ for (const product of newProducts) {
           return acc;
         }, {});
 
+        const retailPrice = Number(editProductRetailPrice);
+        if (editProductRetailPrice === '' || !Number.isFinite(retailPrice) || retailPrice < 0) throw new Error('Please enter a valid retail price.');
         autoSubcollectionUpdate = {
-          name: productName.trim(),
-          description: productCode.trim(),
-          purchaseRate: Number(editProductPurchaseRate),
-          tieredPricing,
-          updatedAt: serverTimestamp(),
+          name: productName.trim(), description: productCode.trim(),
+          purchaseRate: Number(editProductPurchaseRate), purchasePrice: Number(editProductPurchaseRate),
+          price: retailPrice, salePrice: retailPrice, retailPrice,
+          gstRate: Math.max(0, Number(editProductGstRate) || 0), gstType: editProductGstType || 'exclusive',
+          quantity: finalQuantity, current_stock: finalQuantity,
+          initialQuantity: Number(editingProduct.initialQuantity ?? finalQuantity),
+          tieredPricing, updatedAt: serverTimestamp(),
         };
       }
 
       await updateDoc(productDocRef, productData);
       if (autoSubcollectionUpdate) {
         await updateDoc(
-          doc(db, "collections", selectedMainCollectionId, "subcollections", selectedSubcollectionId),
+          doc(db, "collections", selectedMainCollectionId, "subcollections", editingProduct.subcollectionId || selectedSubcollectionId),
           autoSubcollectionUpdate
         );
       }
 
       alert("Product updated successfully!");
       fetchProducts();
+      fetchAllCollectionProducts();
       resetProductForm();
 
       // Cleanup
@@ -2378,7 +2448,7 @@ for (const product of newProducts) {
         "collections",
         selectedMainCollectionId,
         "subcollections",
-        selectedSubcollectionId,
+        product.subcollectionId || selectedSubcollectionId,
         product.destination || "products",
         product.id
       );
@@ -2387,20 +2457,20 @@ for (const product of newProducts) {
 
       // Quick-added products own their subcollection; remove it as well so the
       // one-product/one-subcollection relationship stays consistent.
-      if (selectedSubcollectionData?.autoCreatedForProduct) {
+      const productSubcollectionData = product.subcollectionData || selectedSubcollectionData;
+      if (productSubcollectionData?.autoCreatedForProduct) {
         await deleteDoc(doc(
-          db,
-          "collections",
-          selectedMainCollectionId,
-          "subcollections",
-          selectedSubcollectionId
+          db, "collections", selectedMainCollectionId, "subcollections", product.subcollectionId || selectedSubcollectionId
         ));
-        setSelectedSubcollectionId('');
-        setSelectedSubcollectionData(null);
+        if ((product.subcollectionId || selectedSubcollectionId) === selectedSubcollectionId) {
+          setSelectedSubcollectionId('');
+          setSelectedSubcollectionData(null);
+        }
         await fetchSubcollections();
       } else {
         await fetchProducts();
       }
+      await fetchAllCollectionProducts();
       alert("Product deleted successfully!");
 
     } catch (err) {
@@ -2652,11 +2722,12 @@ for (const product of newProducts) {
   };
 
   // NEW: Filter products based on search term
-  const filteredProducts = products.filter(product => {
+  const productListForManagement = productEntryMode === 'manage' ? allCollectionProducts : products;
+  const filteredProducts = productListForManagement.filter(product => {
     const searchTerm = productSearchTerm.toLowerCase();
-    const productNameMatch = (product.productName || '').toLowerCase().includes(searchTerm);
-    const productCodeMatch = (product.productCode || '').toLowerCase().includes(searchTerm);
-    return productNameMatch || productCodeMatch;
+    return (product.productName || '').toLowerCase().includes(searchTerm)
+      || (product.productCode || '').toLowerCase().includes(searchTerm)
+      || (product.subcollectionName || '').toLowerCase().includes(searchTerm);
   });
   const fetchMainCollectionsForOffline = async () => {
     setIsOfflineProductsLoading(true);
@@ -4595,19 +4666,6 @@ alert(
                     )}
 
                     {productEntryMode === 'manage' && <>
-                    <div className="form-group">
-                      <label>Select Subcollection:</label>
-                      <select onChange={(e) => setSelectedSubcollectionId(e.target.value)} value={selectedSubcollectionId}>
-                        <option value="">-- Select a Subcollection --</option>
-                        {subcollections.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-
                     {selectedSubcollectionId && (
                       <div className="add-collection-form">
 
@@ -4712,10 +4770,9 @@ alert(
                                             accept="image/*"
                                           />
                                         </div>
-                                        {selectedSubcollectionData?.autoCreatedForProduct && (
-                                          <div className="tiered-pricing-container1">
+                                        <div className="tiered-pricing-container1">
                                             <h4>Product Pricing</h4>
-                                            <p>These prices are saved to this product's subcollection using the existing tieredPricing schema.</p>
+                                            <p>Purchase, retail and GST details are saved to the product. For auto-created one-product subcollections, the same details are synced to its subcollection.</p>
                                             <div className="form-group">
                                               <label>Purchase Rate:</label>
                                               <input
@@ -4727,7 +4784,21 @@ alert(
                                                 required
                                               />
                                             </div>
-                                            {PRICING_KEYS.map((pricingKey) => (
+                                            <div className="form-group">
+                                              <label>Retail Price (₹):</label>
+                                              <input type="number" min="0" step="0.01" value={editProductRetailPrice} onChange={(e) => setEditProductRetailPrice(e.target.value)} required />
+                                            </div>
+                                            <div className="form-group">
+                                              <label>GST Rate (%):</label>
+                                              <input type="number" min="0" step="0.01" value={editProductGstRate} onChange={(e) => setEditProductGstRate(e.target.value)} />
+                                            </div>
+                                            <div className="form-group">
+                                              <label>GST Type:</label>
+                                              <select value={editProductGstType} onChange={(e) => setEditProductGstType(e.target.value)}>
+                                                <option value="exclusive">Exclusive</option><option value="inclusive">Inclusive</option>
+                                              </select>
+                                            </div>
+                                            {selectedSubcollectionData?.autoCreatedForProduct && PRICING_KEYS.map((pricingKey) => (
                                               <div className="form-group" key={pricingKey}>
                                                 <label>{pricingKey.toUpperCase()} Price (quantity 1+):</label>
                                                 <input
@@ -4741,7 +4812,6 @@ alert(
                                               </div>
                                             ))}
                                           </div>
-                                        )}
                                       </div>
                                     </div>
                                   </>
@@ -4925,7 +4995,7 @@ alert(
                   {productEntryMode === 'manage' && (
                   <div className="admin-section">
                     <h3>Current Products</h3>
-                    {selectedSubcollectionId ? (
+                    {selectedMainCollectionId ? (
                       isProductLoading ? (
                         <p>Loading products...</p>
                       ) : (
@@ -4947,7 +5017,7 @@ alert(
                           </div>
                           <div className="product-details-table-wrap">
                             <table className="product-details-table">
-                              <thead><tr><th>Product</th><th>Code</th><th>Purchase</th><th>Retail</th><th>GST</th><th>Stock</th><th>Retail Stock Total</th></tr></thead>
+                              <thead><tr><th>Product</th><th>Code</th><th>Subcollection</th><th>Destination</th><th>Purchase</th><th>Retail</th><th>GST</th><th>Stock</th><th>Purchase Stock Total</th><th>Retail Stock Total</th><th>Actions</th></tr></thead>
                               <tbody>
                                 {filteredProducts.map((product) => {
                                   const stock = Number(product.quantity ?? product.current_stock) || 0;
@@ -4955,11 +5025,15 @@ alert(
                                   return <tr key={`detail-${product.destination || 'products'}-${product.id}`}>
                                     <td>{product.productName || 'Unnamed product'}</td>
                                     <td>{product.productCode || '—'}</td>
+                                    <td>{product.subcollectionName || '—'}</td>
+                                    <td>{product.destination === 'appProducts' ? 'Mobile App' : 'Website'}</td>
                                     <td>₹{(Number(product.purchasePrice ?? product.purchaseRate) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                                     <td>₹{retail.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                                     <td>{Number(product.gstRate ?? product.gst_rate) || 0}%</td>
                                     <td>{stock.toLocaleString('en-IN')}</td>
+                                    <td>₹{((Number(product.purchasePrice ?? product.purchaseRate) || 0) * stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                                     <td>₹{(retail * stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                                    <td><button type="button" className="manage-product-edit-button" onClick={() => startEditProduct(product)}>Edit</button></td>
                                   </tr>;
                                 })}
                               </tbody>
@@ -4969,7 +5043,7 @@ alert(
                             {filteredProducts.length > 0 ? (
                               filteredProducts.map((product) => (
                                 <ProductCard
-                                  key={product.id}
+                                  key={`${product.subcollectionId || selectedSubcollectionId}-${product.destination || 'products'}-${product.id}`}
                                   product={product} // This passes the entire product object
                                   onEdit={() => startEditProduct(product)}
                                   onDelete={() => handleDeleteProduct(product)}
@@ -4985,7 +5059,7 @@ alert(
                         </>
                       )
                     ) : (
-                      <p className="select-prompt">Please select a main collection and a subcollection to view its products.</p>
+                      <p className="select-prompt">Please select a main collection to view all products and their automatically created subcollections.</p>
                     )}
                   </div>
                   )}
