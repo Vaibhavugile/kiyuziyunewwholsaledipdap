@@ -27,6 +27,7 @@ import ProductCard from '../components/ProductCard';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 import { getPriceForQuantity, getCartItemId, useCart, createStablePricingId } from '../components/CartContext';
 import './AdminPage.css';
+import './OfflineBillingGST.css';
 import './QuickAddProduct.css';
 import './SaasUsers.css';
 import ReactCrop from 'react-image-crop';
@@ -329,7 +330,6 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
   const [userSearchValue, setUserSearchValue] = useState('');
   const [userSortField, setUserSortField] = useState('createdAt');
   const [userSortOrder, setUserSortOrder] = useState('desc'); // asc | desc
-  const GST_RATE = 0.03; // 3% GST (change if needed)
   const [offlineCustomer, setOfflineCustomer] = useState({
     fullName: '',
     email: '',
@@ -500,10 +500,14 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
       // Item enrichment: Save the availableStock and the variation
       const itemToSave = {
         ...itemToAdd,
-        id: cartItemId, // Use the unique ID as the cart key
-        // You need a helper function to determine the price based on type/tiers
+        productDocumentId: product.productDocumentId || product.id,
+        destination: product.destination || 'products',
+        productCode: String(product.productCode || '').trim(),
+        id: cartItemId,
         price: getPriceForOfflineBilling(itemToAdd, offlinePricingKey),
-        availableStock: availableStock, // Save the stock for cart controls
+        availableStock,
+        gstRate: parseFloat(product.gstRate ?? product.gst_rate ?? 0) || 0,
+        gstType: product.gstType ?? product.gst_type ?? 'exclusive',
       };
 
       if (existingItem) {
@@ -667,21 +671,31 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
     console.log('User Order Stats:', userOrderStats);
   }, [userOrderStats]);
 
-  const baseTotal =
-    editedTotal !== ''
-      ? Number(editedTotal)
-      : Number(offlineSubtotal);
+  // Product-wise GST: inclusive prices already contain tax; exclusive prices add tax to the bill.
+  const getProductGstDetails = (item, lineTotal) => {
+    const rate = Math.max(0, parseFloat(item?.gstRate ?? item?.gst_rate ?? 0) || 0);
+    const rawType = String(item?.gstType ?? item?.gst_type ?? 'exclusive').toLowerCase();
+    const inclusive = rawType.includes('inclusive') || rawType.includes('included') || rawType === 'incl';
+    const tax = inclusive
+      ? (rate > 0 ? Number(lineTotal || 0) * rate / (100 + rate) : 0)
+      : Number(lineTotal || 0) * rate / 100;
+    return { rate, type: inclusive ? 'inclusive' : 'exclusive', tax, addedTax: inclusive ? 0 : tax };
+  };
 
-  const gstAmount = isGSTApplied
-    ? baseTotal * GST_RATE
-    : 0;
+  const offlineGstSummary = Object.values(pricedOfflineCart).reduce((summary, item) => {
+    const unitPrice = Number(item.calculatedPrice ?? item.price ?? 0) || 0;
+    const lineTotal = unitPrice * (Number(item.quantity) || 0);
+    const details = getProductGstDetails(item, lineTotal);
+    summary.taxAmount += details.tax;
+    summary.addedTax += details.addedTax;
+    summary.includedTax += details.type === 'inclusive' ? details.tax : 0;
+    return summary;
+  }, { taxAmount: 0, addedTax: 0, includedTax: 0 });
 
-const shippingValue = isShippingApplied ? SHIPPING_CHARGE : 0;
-
-const finalTotal =
-  Number(offlineSubtotal) +
-  (isGSTApplied ? Number(gstAmount) : 0) +
-  shippingValue;
+  const baseTotal = editedTotal !== '' ? Math.max(0, Number(editedTotal) || 0) : Number(offlineSubtotal);
+  const gstAmount = offlineGstSummary.taxAmount;
+  const shippingValue = isShippingApplied ? SHIPPING_CHARGE : 0;
+  const finalTotal = baseTotal + offlineGstSummary.addedTax + shippingValue;
 
   const handleTierChange = (type, index, field, value) => {
     setSubcollectionTieredPricing((prevPricing) => {
@@ -2847,52 +2861,70 @@ for (const product of newProducts) {
     }
   };
 
+  // Fast POS loading: fetch all selected subcollections concurrently instead of
+  // waiting for each Firestore request one after another.
   const fetchOfflineProducts = async () => {
-    // 🚫 Collection must be selected
-    if (!selectedOfflineCollectionId || Object.keys(subcollectionsMap).length === 0) {
+    if (!selectedOfflineCollectionId) {
+      setOfflineProducts([]);
+      return;
+    }
+
+    const subcollectionIds = selectedOfflineSubcollectionId
+      ? [selectedOfflineSubcollectionId]
+      : (offlineSubcollections.length
+          ? offlineSubcollections.map((item) => item.id)
+          : Object.keys(subcollectionsMap));
+
+    if (!subcollectionIds.length) {
       setOfflineProducts([]);
       return;
     }
 
     setIsOfflineProductsLoading(true);
-
     try {
-      let allProducts = [];
+      const snapshotsBySubcollection = await Promise.all(
+        subcollectionIds.map(async (subId) => {
+          const basePath = ['collections', selectedOfflineCollectionId, 'subcollections', subId];
+          const [productsSnap, appProductsSnap] = await Promise.all([
+            getDocs(collection(db, ...basePath, 'products')),
+            getDocs(collection(db, ...basePath, 'appProducts')),
+          ]);
+          return { subId, productsSnap, appProductsSnap };
+        })
+      );
 
-      // ✅ Decide which subcollections to load
-      const subcollectionIds = selectedOfflineSubcollectionId
-        ? [selectedOfflineSubcollectionId]              // Single subcollection
-        : Object.keys(subcollectionsMap);                // ALL subcollections
-
-      // 🔄 Loop through required subcollections
-      for (const subId of subcollectionIds) {
-        const productsRef = collection(
-          db,
-          'collections',
-          selectedOfflineCollectionId,
-          'subcollections',
-          subId,
-          'products'
-        );
-
-        const productsSnap = await getDocs(productsRef);
-
-        productsSnap.forEach(docSnap => {
+      const allProducts = [];
+      for (const { subId, productsSnap, appProductsSnap } of snapshotsBySubcollection) {
+        const subData = subcollectionsMap[subId] ||
+          offlineSubcollections.find((item) => item.id === subId) || {};
+        const appendOfflineProduct = (docSnap, destination) => {
+          const data = docSnap.data();
           allProducts.push({
+            ...data,
             id: docSnap.id,
-            ...docSnap.data(),
-
-            // 🔑 Attach pricing & hierarchy info
-            tieredPricing: subcollectionsMap[subId]?.tieredPricing,
+            productDocumentId: docSnap.id,
+            destination,
+            gstRate: data.gstRate ?? data.gst_rate ?? subData.gstRate ?? 0,
+            gstType: data.gstType ?? data.gst_type ?? subData.gstType ?? 'exclusive',
+            purchaseRate: data.purchaseRate ?? data.purchasePrice ?? subData.purchaseRate ?? subData.purchasePrice ?? 0,
+            retailPrice: data.retailPrice ?? data.salePrice ?? data.price ?? subData.retailPrice ?? subData.salePrice ?? subData.price ?? 0,
+            price: data.price ?? data.retailPrice ?? data.salePrice ?? subData.price ?? subData.retailPrice ?? subData.salePrice ?? 0,
+            tieredPricing: subData.tieredPricing || data.tieredPricing,
             subcollectionId: subId,
             collectionId: selectedOfflineCollectionId,
           });
-        });
+        };
+        productsSnap.forEach((docSnap) => appendOfflineProduct(docSnap, 'products'));
+        appProductsSnap.forEach((docSnap) => appendOfflineProduct(docSnap, 'appProducts'));
       }
 
+      // Keep the UI snappy when the same collection is opened again.
+      const cacheKey = `offlinePosProducts:${selectedOfflineCollectionId}:${selectedOfflineSubcollectionId || 'all'}`;
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(allProducts)); } catch (_) {}
       setOfflineProducts(allProducts);
     } catch (error) {
       console.error('Error fetching offline products:', error);
+      setOfflineProducts([]);
     } finally {
       setIsOfflineProductsLoading(false);
     }
@@ -2957,15 +2989,29 @@ for (const product of newProducts) {
 
 
   const handleOfflineRemoveFromCart = (cartItemId) => {
-    setOfflineCart(prevCart => {
-      const newCart = { ...prevCart };
-      const newQuantity = (newCart[cartItemId]?.quantity || 0) - 1;
-      if (newQuantity <= 0) {
-        delete newCart[cartItemId];
-      } else {
-        newCart[cartItemId].quantity = newQuantity;
-      }
-      return newCart;
+    setOfflineCart((prevCart) => {
+      const current = prevCart[cartItemId];
+      if (!current) return prevCart;
+      const nextQuantity = (Number(current.quantity) || 0) - 1;
+      const nextCart = { ...prevCart };
+      if (nextQuantity <= 0) delete nextCart[cartItemId];
+      else nextCart[cartItemId] = { ...current, quantity: nextQuantity };
+      return nextCart;
+    });
+  };
+
+  // Cart controls update the exact key rendered by the cart; they do not
+  // recalculate an ID from an already-enriched cart item.
+  const handleOfflineIncrementCartItem = (cartItemId) => {
+    setOfflineCart((prevCart) => {
+      const current = prevCart[cartItemId];
+      if (!current) return prevCart;
+      const stock = Number(current.availableStock ?? current.quantity ?? 0);
+      if (Number(current.quantity || 0) >= stock) return prevCart;
+      return {
+        ...prevCart,
+        [cartItemId]: { ...current, quantity: Number(current.quantity || 0) + 1 },
+      };
     });
   };
 
@@ -2991,9 +3037,10 @@ for (const product of newProducts) {
     for (const item of cartItems) {
       const subcollectionId = item.subcollectionId;
       const collectionId = item.collectionId;
+      const pricingGroupKey = `${collectionId}__${subcollectionId}`;
       const quantitySold = Number(item.quantity) || 0;
 
-      if (!subcollectionPricingMap[subcollectionId]) {
+      if (!subcollectionPricingMap[pricingGroupKey]) {
         const subcollectionRef = doc(
           db,
           'collections',
@@ -3009,15 +3056,15 @@ for (const product of newProducts) {
           continue;
         }
 
-        subcollectionPricingMap[subcollectionId] = {
+        subcollectionPricingMap[pricingGroupKey] = {
           pricingData: subcollectionDoc.data().tieredPricing || {},
           totalQuantity: 0,
           items: [],
         };
       }
 
-      subcollectionPricingMap[subcollectionId].totalQuantity += quantitySold;
-      subcollectionPricingMap[subcollectionId].items.push(item);
+      subcollectionPricingMap[pricingGroupKey].totalQuantity += quantitySold;
+      subcollectionPricingMap[pricingGroupKey].items.push(item);
     }
 
     let runningTotal = 0;
@@ -3069,98 +3116,64 @@ for (const product of newProducts) {
     };
   };
   const fetchAllProductsForScan = async () => {
-    console.log("📦 Loading ALL products for barcode scan...");
-
+    console.log("Loading all products for product-code scanning...");
     try {
-      const collectionsSnap = await getDocs(
-        collection(db, "collections")
-      );
-
-      const allProductPromises = [];
-
-      /* ===============================
-         FETCH ALL COLLECTION PRODUCTS
-      =============================== */
-      collectionsSnap.docs.forEach(col => {
-        allProductPromises.push(
-          getDocs(
-            collection(
-              db,
-              "collections",
-              col.id,
-              "subcollections"
-            )
-          ).then(subSnap =>
-            Promise.all(
-              subSnap.docs.map(sub =>
-                getDocs(
-                  collection(
-                    db,
-                    "collections",
-                    col.id,
-                    "subcollections",
-                    sub.id,
-                    "products"
-                  )
-                ).then(prodSnap => ({
-                  colId: col.id,
-                  subId: sub.id,
-                  prodSnap
-                }))
-              )
-            )
-          )
-        );
-      });
-
-      const results = await Promise.all(allProductPromises);
-
+      const collectionsSnap = await getDocs(collection(db, "collections"));
       const map = {};
+      const duplicateCodes = new Set();
+      const duplicateNormalizedCodes = new Set();
 
-      /* ===============================
-         BUILD SCAN MAP (UPDATED)
-      =============================== */
-      results.flat(2).forEach(
-        ({ colId, subId, prodSnap }) => {
-          prodSnap.forEach(docSnap => {
+      for (const col of collectionsSnap.docs) {
+        const subsSnap = await getDocs(collection(db, "collections", col.id, "subcollections"));
+        for (const sub of subsSnap.docs) {
+          const subData = sub.data();
+          const basePath = ["collections", col.id, "subcollections", sub.id];
+          const [productsSnap, appProductsSnap] = await Promise.all([
+            getDocs(collection(db, ...basePath, "products")),
+            getDocs(collection(db, ...basePath, "appProducts")),
+          ]);
 
+          const addProduct = (docSnap, destination) => {
             const data = docSnap.data();
-
-            /* 🔥 KEY CHANGE: LOWERCASE MAP KEY */
-            const normalizedId =
-              docSnap.id.toLowerCase();
-
-            map[normalizedId] = {
-              id: docSnap.id, // original ID
+            const productCode = String(data.productCode || data.product_code || '').trim();
+            if (!productCode) return;
+            const normalizedCode = productCode.replace(/[\s\n\r\t]/g, '').toLowerCase();
+            if (duplicateNormalizedCodes.has(normalizedCode)) return;
+            if (map[normalizedCode]) {
+              duplicateCodes.add(productCode);
+              duplicateNormalizedCodes.add(normalizedCode);
+              delete map[normalizedCode];
+              console.warn(`Duplicate product code found while loading scanner: ${productCode}`);
+              return;
+            }
+            map[normalizedCode] = {
               ...data,
-              collectionId: colId,
-              subcollectionId: subId,
+              id: docSnap.id,
+              productDocumentId: docSnap.id,
+              productCode,
+              destination,
+              collectionId: col.id,
+              subcollectionId: sub.id,
+              tieredPricing: data.tieredPricing || subData.tieredPricing || {},
+              gstRate: data.gstRate ?? data.gst_rate ?? subData.gstRate ?? 0,
+              gstType: data.gstType ?? data.gst_type ?? subData.gstType ?? 'exclusive',
+              retailPrice: data.retailPrice ?? data.salePrice ?? data.price ?? subData.retailPrice ?? subData.salePrice ?? subData.price ?? 0,
+              price: data.price ?? data.retailPrice ?? data.salePrice ?? subData.price ?? subData.retailPrice ?? subData.salePrice ?? 0,
             };
-
-          });
+          };
+          productsSnap.forEach(d => addProduct(d, 'products'));
+          appProductsSnap.forEach(d => addProduct(d, 'appProducts'));
         }
-      );
+      }
 
-      console.log(
-        "✅ Products loaded:",
-        Object.keys(map).length
-      );
-
+      if (duplicateCodes.size) {
+        console.error("Duplicate product codes detected; scanning is disabled for these ambiguous codes:", [...duplicateCodes]);
+      }
+      map.__duplicateCodes = [...duplicateNormalizedCodes];
       setAllProductsMap(map);
-
-      /* ===============================
-         CACHE SAVE
-      =============================== */
-      localStorage.setItem(
-        "offlineProductsCache",
-        JSON.stringify(map)
-      );
-
+      localStorage.setItem("offlineProductsByCodeCacheV2", JSON.stringify(map));
     } catch (error) {
-      console.error(
-        "❌ Error loading products for scan:",
-        error
-      );
+      console.error("Error loading products for barcode scan:", error);
     }
   };
 
@@ -3168,7 +3181,7 @@ for (const product of newProducts) {
     if (activeTab !== "offline-billing") return;
 
     const cached = localStorage.getItem(
-      "offlineProductsCache"
+      "offlineProductsByCodeCacheV2"
     );
 
     if (cached) {
@@ -3182,14 +3195,7 @@ for (const product of newProducts) {
 
   }, [activeTab]);
 
-  useEffect(() => {
-    if (activeTab !== "offline-billing") return;
 
-    // Already loaded? Skip
-    if (Object.keys(allProductsMap).length > 0) return;
-
-    fetchAllProductsForScan();
-  }, [activeTab]);
   useEffect(() => {
     if (
       Object.keys(allProductsMap).length > 0 &&
@@ -3228,7 +3234,7 @@ for (const product of newProducts) {
     /* ==============================
        ⏳ PRODUCTS STILL LOADING
     ============================== */
-    if (Object.keys(allProductsMap).length === 0) {
+    if (Object.keys(allProductsMap).filter(key => key !== '__duplicateCodes').length === 0) {
 
       playSound("/sounds/scan-error.mp3");
 
@@ -3242,9 +3248,7 @@ for (const product of newProducts) {
     /* ==============================
        🔎 FIND PRODUCT (UPDATED)
     ============================== */
-    const product =
-      allProductsMap[code] ||                 // exact
-      allProductsMap[normalizedCode];         // lowercase
+    const product = allProductsMap[normalizedCode];
 
     /* ==============================
        ❌ PRODUCT NOT FOUND
@@ -3252,6 +3256,11 @@ for (const product of newProducts) {
     if (!product) {
 
       playSound("/sounds/scan-error.mp3");
+
+      if ((allProductsMap.__duplicateCodes || []).includes(normalizedCode)) {
+        alert(`Duplicate product code detected: ${code}. Fix the duplicate code in Firestore before scanning this item.`);
+        return;
+      }
 
       console.warn(
         "❌ Product not found for barcode:",
@@ -3525,37 +3534,37 @@ setTimeout(() => {
         // ----------------------------------------------------
         console.log(`\n--- STARTING OFFLINE SALE TRANSACTION PREP ---`);
 
-        // 1. Group cart items by their base Product ID and fetch the document once
+        // Group by full Firestore path so different products with similar IDs never collide.
         for (const item of Object.values(offlineCart)) {
-          const baseProductId = item.id.split('_')[0];
+          const baseProductId = item.productDocumentId || String(item.id).split('_')[0];
+          const destination = item.destination || 'products';
+          const updateKey = `${item.collectionId}__${item.subcollectionId}__${destination}__${baseProductId}`;
 
-          if (!productUpdatesMap[baseProductId]) {
+          if (!productUpdatesMap[updateKey]) {
             const productRef = doc(db,
               'collections', item.collectionId,
               'subcollections', item.subcollectionId,
-              'products', baseProductId
+              destination, baseProductId
             );
             const productDoc = await getDoc(productRef);
+            if (!productDoc.exists()) throw new Error(`Product not found: ${baseProductId}`);
 
-            if (!productDoc.exists()) {
-              throw new Error(`Product not found: ${baseProductId}`);
-            }
-
-            productUpdatesMap[baseProductId] = {
+            productUpdatesMap[updateKey] = {
               ref: productRef,
               data: productDoc.data(),
               cartItems: [],
               hasError: false,
+              baseProductId,
             };
           }
-          productUpdatesMap[baseProductId].cartItems.push(item);
+          productUpdatesMap[updateKey].cartItems.push(item);
         }
 
         // 2. Process all cart items for each product to calculate the final stock
         const batch = writeBatch(db);
 
-        for (const baseProductId in productUpdatesMap) {
-          const { ref: productRef, data: productData, cartItems } = productUpdatesMap[baseProductId];
+        for (const updateKey in productUpdatesMap) {
+          const { ref: productRef, data: productData, cartItems, baseProductId } = productUpdatesMap[updateKey];
 
           // 🛑 CRITICAL FIX: Only treat as variations if the array exists AND has items.
           let currentVariations = (productData.variations && productData.variations.length > 0)
@@ -3582,7 +3591,7 @@ setTimeout(() => {
 
                   if (newQuantity < 0) {
                     isStockError = true;
-                    productUpdatesMap[baseProductId].hasError = true;
+                    productUpdatesMap[updateKey].hasError = true;
                     console.error(`  ❌ STOCK ERROR: Requested ${quantitySold}, but only ${currentQuantity} available.`);
                     return v;
                   }
@@ -3603,7 +3612,7 @@ setTimeout(() => {
 
               if (newQuantity < 0) {
                 isStockError = true;
-                productUpdatesMap[baseProductId].hasError = true;
+                productUpdatesMap[updateKey].hasError = true;
                 // ✅ FIX (from previous error): Log the correct variable
 console.error(
   `❌ STOCK ERROR:
@@ -3620,7 +3629,7 @@ Requested: ${quantitySold}
           }
 
           // 3. Add ONE FINAL UPDATE to the batch for this base product ID
-          if (!productUpdatesMap[baseProductId].hasError) {
+          if (!productUpdatesMap[updateKey].hasError) {
             let finalUpdateData = {};
             let finalQtyLog = '';
 
@@ -3650,14 +3659,11 @@ Requested: ${quantitySold}
 
         // ... (The rest of the order data construction remains unchanged) ...
 
-        const baseTotal =
-          editedTotal !== '' ? Number(editedTotal) : Number(offlineSubtotal);
-
-        const gstValue = isGSTApplied ? baseTotal * GST_RATE : 0;
-
+        const baseTotal = editedTotal !== '' ? Math.max(0, Number(editedTotal) || 0) : Number(offlineSubtotal);
+        const gstValue = offlineGstSummary.taxAmount;
+        const addedGstValue = offlineGstSummary.addedTax;
         const shippingValue = isShippingApplied ? SHIPPING_CHARGE : 0;
-
-       const totalAmountToUse = baseTotal + gstValue + shippingValue;
+        const totalAmountToUse = baseTotal + addedGstValue + shippingValue;
 
         // Billing Info (Unchanged)
 
@@ -3676,19 +3682,30 @@ Requested: ${quantitySold}
 
 
         // Order Items (Using correctly calculated price)
-        const orderItems = Object.values(pricedOfflineCart).map(item => ({
-          productId: item.id.split('_')[0] || 'N/A',
-          productName: item.productName || 'N/A',
-          productCode: item.productCode || 'N/A',
-          quantity: item.quantity || 0,
-          priceAtTimeOfOrder: typeof item.calculatedPrice === 'number' ? item.calculatedPrice : Number(item.price) || 0,
-          price: typeof item.calculatedPrice === 'number' ? item.calculatedPrice : Number(item.price) || 0,
-          image: item.image || '',
-          images: item.images || [],
-          variation: item.variation || null,
-          subcollectionId: item.subcollectionId,
-          collectionId: item.collectionId,
-        }));
+        const orderItems = Object.values(pricedOfflineCart).map(item => {
+          const unitPrice = typeof item.calculatedPrice === 'number' ? item.calculatedPrice : Number(item.price) || 0;
+          const lineSubtotal = unitPrice * (Number(item.quantity) || 0);
+          const gst = getProductGstDetails(item, lineSubtotal);
+          return {
+            productId: item.productDocumentId || String(item.id).split('_')[0] || 'N/A',
+            productName: item.productName || 'N/A',
+            productCode: item.productCode || 'N/A',
+            quantity: item.quantity || 0,
+            priceAtTimeOfOrder: unitPrice,
+            price: unitPrice,
+            lineSubtotal,
+            gstRate: gst.rate,
+            gstType: gst.type,
+            gstAmount: gst.tax,
+            gstAddedToTotal: gst.addedTax,
+            image: item.image || '',
+            images: item.images || [],
+            variation: item.variation || null,
+            subcollectionId: item.subcollectionId,
+            collectionId: item.collectionId,
+            destination: item.destination || 'products',
+          };
+        });
 
 
         const orderData = {
@@ -3698,9 +3715,11 @@ Requested: ${quantitySold}
           billingInfo: offlineSaleCustomerInfo,
           items: orderItems,
           subtotal: baseTotal,
-          gstApplied: isGSTApplied,
-          gstRate: GST_RATE,
+          gstApplied: gstValue > 0,
+          gstCalculation: 'per-product',
+          gstRate: null,
           gstAmount: gstValue,
+          gstAddedToTotal: addedGstValue,
           totalAmount: totalAmountToUse,
           shippingFee: shippingValue,
           pricingKey: offlinePricingKey,
@@ -3722,9 +3741,11 @@ Requested: ${quantitySold}
           customer: offlineSaleCustomerInfo,
           items: orderItems,
           subtotal: baseTotal,
-          gstRate: GST_RATE,
+          gstRate: null,
           shippingFee: shippingValue,
           gstAmount: gstValue,
+          gstAddedToTotal: addedGstValue,
+          includedGstAmount: offlineGstSummary.includedTax,
           total: totalAmountToUse,
           invoiceDate: new Date(),
           invoiceNumber: orderRef.id,
@@ -3767,9 +3788,9 @@ localStorage.removeItem("offlineBillingDraft");
 const stockErrorMessages = [];
 
 for (const item of Object.values(offlineCart)) {
-
-  const baseProductId = item.id.split('_')[0];
-  const productData = productUpdatesMap[baseProductId];
+  const baseProductId = item.productDocumentId || String(item.id).split('_')[0];
+  const updateKey = `${item.collectionId}__${item.subcollectionId}__${item.destination || 'products'}__${baseProductId}`;
+  const productData = productUpdatesMap[updateKey];
 
   if (productData?.hasError) {
 
@@ -5488,8 +5509,8 @@ alert(
 
         {activeTab === 'offline-billing' &&
           ROLE_PERMISSIONS[currentUserRole]?.includes("offline-billing") && (
-            <div className="offline-billing-section">
-              <h2>Offline Billing</h2>
+            <div className="offline-pos-root">
+              <div className="offline-pos-header"><div><span className="offline-pos-eyebrow">TANISHKA · STORE COUNTER</span><h2>Offline Billing</h2><p>Fast checkout · live stock · product-wise GST · printable invoice</p></div><span className="offline-pos-live"><i /> POS READY</span></div>
 
               {/* 🔑 HIDDEN BARCODE INPUT (USB / Bluetooth Scanner) */}
               <input
@@ -5507,12 +5528,12 @@ alert(
               />
 
 
-              <div className="billing-container">
-                <div className="product-selection-panel">
+              <div className="offline-pos-layout">
+                <div className="offline-pos-products-panel">
                   <h4>Select Products</h4>
                   <div className="dropdown-group">
                     <select
-                      className="billing-select"
+                      className="offline-pos-select"
                       value={offlinePricingKey}
                       onChange={(e) => setOfflinePricingKey(e.target.value)}
                     >
@@ -5527,7 +5548,7 @@ alert(
                     </select>
 
                     <select
-                      className="billing-select"
+                      className="offline-pos-select"
                       value={selectedOfflineCollectionId}
                       onChange={(e) => setSelectedOfflineCollectionId(e.target.value)}
                     >
@@ -5539,7 +5560,7 @@ alert(
                       ))}
                     </select>
                     <select
-                      className="billing-select"
+                      className="offline-pos-select"
                       value={selectedOfflineSubcollectionId}
                       onChange={(e) => setSelectedOfflineSubcollectionId(e.target.value)}
                       disabled={!selectedOfflineCollectionId}
@@ -5559,11 +5580,11 @@ alert(
                     placeholder="Search products by name or code..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="product-search-bar"
+                    className="offline-pos-search"
                   />
                   {/* 📷 CAMERA SCAN BUTTON */}
                   <button
-                    className="scan-camera-btn"
+                    className="offline-pos-btn offline-pos-btn--camera"
                     onClick={() => setShowCameraScanner(true)}
                     style={{
                       marginBottom: "12px",
@@ -5576,7 +5597,7 @@ alert(
                     📷 Scan with Camera
                   </button>
                   <button
-                    className="scan-mode-btn"
+                    className="offline-pos-btn"
                     onClick={() => {
                       setIsScanMode(true);
 
@@ -5589,7 +5610,7 @@ alert(
                   </button>
 
                   <button
-                    className="scan-mode-btn stop"
+                    className="offline-pos-btn offline-pos-btn--stop"
                     onClick={() => setIsScanMode(false)}
                   >
                     ✋ Stop Scanner
@@ -5598,7 +5619,7 @@ alert(
                   <button
                     onClick={() => {
                       localStorage.removeItem(
-                        "offlineProductsCache"
+                        "offlineProductsByCodeCacheV2"
                       );
 
                       fetchAllProductsForScan();
@@ -5616,9 +5637,9 @@ alert(
 
 
                   {isOfflineProductsLoading ? (
-                    <p className="loading-message">Loading products...</p>
+                    <p className="offline-pos-loading">Loading products...</p>
                   ) : filteredOfflineProducts.length > 0 ? (
-                    <div className="billing-product-list">
+                    <div className="offline-pos-product-grid">
                       {filteredOfflineProducts.map(product => {
                         // --- STOCK/VARIATION LOGIC SETUP (Requires offlineSelections state) ---
                         // 1. Get the current selection (or default to the first variant)
@@ -5643,25 +5664,25 @@ alert(
                         return (
                           <div
                             key={product.id}
-                            className={`billing-product-item ${isMaxStockReached ? 'stock-limit' : ''}`}
+                            className={`offline-pos-product-card ${isMaxStockReached ? 'stock-limit' : ''}`}
                           >
                             {/* Product Details */}
                             <img
                               alt={product.productName}
                               src={currentImage}
-                              className="product-image"
+                              className="offline-pos-product-image"
                               // 🛑 ADDED: onClick handler to open the full image modal 🛑
                               onClick={() => openImageModal(currentImage)}
                               style={{ cursor: 'pointer' }} // Visual hint that it's clickable
                             />
-                            <div className="product-details">
-                              <span className="product-name">{product.productName}</span>
-                              <span className="product-code">{product.productCode}</span>
+                            <div className="offline-pos-product-details">
+                              <span className="offline-pos-product-name">{product.productName}</span>
+                              <span className="offline-pos-product-code">{product.productCode}</span>
 
                               {/* Variation Selector */}
                               {product.variations && product.variations.length > 1 && (
                                 <select
-                                  className="billing-variation-select"
+                                  className="offline-pos-variation"
                                   value={JSON.stringify(currentSelection || {})}
                                   onChange={(e) => {
                                     try {
@@ -5698,13 +5719,13 @@ alert(
                             </div>
 
                             {/* Add to Cart Control */}
-                            <div className="product-actions-offline">
+                            <div className="offline-pos-product-actions">
                                
-                              <span className="cart-item-quantity">In Cart: {currentQuantityInCart}</span>
+                              <span className="offline-pos-stock-note">In Cart: {currentQuantityInCart}</span>
                               <button
                                 // Pass the product and the currently selected variation to the handler
                                 onClick={() => handleOfflineAddToCart(product, currentSelection)}
-                                className={`add-to-cart-btn ${isMaxStockReached ? 'disabled' : ''}`}
+                                className={`offline-pos-add-btn ${isMaxStockReached ? 'disabled' : ''}`}
                                 disabled={isMaxStockReached}
                               >
                                 {isMaxStockReached ? (availableStock === 0 ? 'Out of Stock' : 'Max Stock Reached') : 'Add 1'}
@@ -5715,7 +5736,7 @@ alert(
                       })}
                     </div>
                   ) : (
-                    <p className="no-products-found">
+                    <p className="offline-pos-empty">
                       {selectedOfflineSubcollectionId
                         ? 'No products found for your search.'
                         : 'Please select a collection and subcollection to view products.'}
@@ -5723,11 +5744,11 @@ alert(
                   )}
                 </div>
 
-                <div className="billing-cart-panel">
+                <div className="offline-pos-cart-panel">
                   <h4>Billing Cart</h4>
                   {Object.keys(offlineCart).length > 0 ? (
                     <>
-                      <ul className="cart-list">
+                      <ul className="offline-pos-cart-list">
                         {/* CRITICAL: Iterate over pricedOfflineCart, not offlineCart */}
                         {Object.values(pricedOfflineCart).map((item) => {
                           // Calculate the final unit price and line total for display
@@ -5737,34 +5758,44 @@ alert(
                           const lineTotal = unitPrice * item.quantity;
 
                           return (
-                            <li key={item.id} className="cart-item">
-                              <div className="cart-item-details">
-                                <span className="cart-item-name">{item.productName}</span>
-                                <span className="cart-item-code">{item.productCode}</span>
+                            <li key={item.id} className="offline-pos-cart-item">
+                              <div className="offline-pos-cart-details">
+                                <span className="offline-pos-cart-name">{item.productName}</span>
+                                <span className="offline-pos-cart-code">{item.productCode}</span>
                                 {/* Display Variation */}
                                 {item.variation && (item.variation.color || item.variation.size) && (
-                                  <span className="cart-item-info variation-detail">
+                                  <span className="offline-pos-cart-info offline-pos-variation-detail">
                                     {item.variation.color} {item.variation.size}
                                   </span>
                                 )}
 
                                 {/* UPDATED: Display calculated unit price */}
-                                <span className="cart-item-info unit-price">
+                                <span className="offline-pos-cart-info offline-pos-unit-price">
                                   ₹{unitPrice.toFixed(2)} / unit
                                 </span>
+                                {(() => {
+                                  const gst = getProductGstDetails(item, lineTotal);
+                                  return (
+                                    <span className="offline-pos-gst-line">
+                                      GST {gst.rate}% ({gst.type}): ₹{gst.tax.toFixed(2)}
+                                    </span>
+                                  );
+                                })()}
                               </div>
-                              <div className="cart-item-controls">
+                              <div className="offline-pos-cart-controls">
                                 {/* NEW: Display line total */}
-                                <span className="cart-item-info line-total">
-                                  <strong className="line-total-amount">₹{lineTotal.toFixed(2)}</strong>
+                                <span className="offline-pos-cart-info offline-pos-line-total">
+                                  <strong className="offline-pos-line-total-amount">₹{lineTotal.toFixed(2)}</strong>
                                 </span>
 
-                                <button onClick={() => handleOfflineRemoveFromCart(item.id)} className="quantity-btn">-</button>
-                                <span className="cart-quantity">{item.quantity}</span>
+                                <button type="button" aria-label={`Decrease quantity of ${item.productName}`} onClick={() => handleOfflineRemoveFromCart(item.id)} className="offline-pos-qty-btn">−</button>
+                                <span className="offline-pos-cart-qty">{item.quantity}</span>
                                 <button
-                                  onClick={() => handleOfflineAddToCart(item, item.variation)}
-                                  className="quantity-btn"
-                                  disabled={item.quantity >= (item.availableStock || Infinity)}
+                                  type="button"
+                                  aria-label={`Increase quantity of ${item.productName}`}
+                                  onClick={() => handleOfflineIncrementCartItem(item.id)}
+                                  className="offline-pos-qty-btn"
+                                  disabled={Number(item.quantity || 0) >= Number(item.availableStock ?? 0)}
                                 >
                                   +
                                 </button>
@@ -5775,9 +5806,9 @@ alert(
                       </ul>
 
                       {/* NEW: Editable Total Input */}
-                      <div className="cart-total-info">
+                      <div className="offline-pos-total">
                         {/* FIX: Removed the extra ₹ symbol (₹₹ -> ₹) */}
-                        <p className="calculated-total">
+                        <p className="offline-pos-calculated-total">
                           Calculated Total: ₹{finalTotal.toFixed(2)}
                         </p>
                         <label htmlFor="edited-total-input">Final Total:</label>
@@ -5787,27 +5818,22 @@ alert(
                           value={editedTotal}
                           onChange={(e) => setEditedTotal(e.target.value)}
                           placeholder="Enter final total"
-                          className="editable-total-input"
+                          className="offline-pos-total-input"
                         />
                       </div>
-                      <div className="gst-section">
-                        <label className="gst-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={isGSTApplied}
-                            onChange={(e) => setIsGSTApplied(e.target.checked)}
-                          />
-                          Apply GST ({GST_RATE * 100}%)
-                        </label>
-
-                        {isGSTApplied && (
-                          <p className="gst-amount">
-                            GST Amount: ₹{gstAmount.toFixed(2)}
-                          </p>
+                      <div className="offline-pos-gst-summary">
+                        <strong>Product-wise GST</strong>
+                        <p>GST is calculated automatically from each product's saved GST rate and tax type.</p>
+                        <p className="gst-amount">Total GST: ₹{gstAmount.toFixed(2)}</p>
+                        {offlineGstSummary.addedTax > 0 && (
+                          <p className="gst-amount">GST added to bill (exclusive products): ₹{offlineGstSummary.addedTax.toFixed(2)}</p>
+                        )}
+                        {offlineGstSummary.includedTax > 0 && (
+                          <p className="gst-amount">GST already included in prices: ₹{offlineGstSummary.includedTax.toFixed(2)}</p>
                         )}
                       </div>
-                      <div className="shipping-section">
-  <label className="shipping-checkbox">
+                      <div className="offline-pos-shipping">
+  <label className="offline-pos-shipping-check">
     <input
       type="checkbox"
       checked={isShippingApplied}
@@ -5817,17 +5843,20 @@ alert(
   </label>
 
   {isShippingApplied && (
-    <p className="shipping-amount">
+    <p className="offline-pos-shipping-amount">
       Shipping: ₹{SHIPPING_CHARGE}
     </p>
   )}
 </div>
-                      <div className="offline-customer-form">
-                        <h4>Customer Details</h4>
+                      <div className="offline-pos-customer">
+                        <div className="offline-pos-section-heading">
+                          <span className="offline-pos-section-icon">01</span>
+                          <div><h4>Customer details</h4><p>Details for the invoice and optional WhatsApp receipt</p></div>
+                        </div>
 
                         <input
                           type="text"
-                          placeholder="Customer Name"
+                          placeholder="Full name *"
                           value={offlineCustomer.fullName}
                           onChange={(e) => handleOfflineCustomerChange('fullName', e.target.value)}
                         />
@@ -5841,13 +5870,13 @@ alert(
 
                         <input
                           type="tel"
-                          placeholder="Phone Number"
+                          placeholder="Mobile number (for WhatsApp receipt)"
                           value={offlineCustomer.phoneNumber}
                           onChange={(e) => handleOfflineCustomerChange('phoneNumber', e.target.value)}
                         />
                         <input
   type="text"
-  placeholder="Customer GST Number (optional)"
+  placeholder="GSTIN (optional)"
   value={offlineCustomer.gst || ""}
   onChange={(e) =>
     handleOfflineCustomerChange("gst", e.target.value)
@@ -5890,21 +5919,22 @@ alert(
                         />
                       </div>
 
-                      <label className="whatsapp-checkbox">
+                      <label className="offline-pos-whatsapp-option">
                         <input
                           type="checkbox"
                           checked={sendInvoiceOnWhatsApp}
                           onChange={(e) => setSendInvoiceOnWhatsApp(e.target.checked)}
                         />
-                        Send invoice on WhatsApp
+                        <span className="offline-pos-whatsapp-mark">WA</span>
+                        <span><strong>Share invoice on WhatsApp</strong><small>Opens WhatsApp with the invoice PDF link after billing.</small></span>
                       </label>
 
 
-                      <button onClick={handleFinalizeSale} className="finalize-sale-btn">
+                      <button type="button" onClick={handleFinalizeSale} className="offline-pos-checkout-btn">
                         Finalize Sale
                       </button>
                       <button
-                        className="print-invoice-btn"
+                        className="offline-pos-secondary-btn"
                         onClick={() => setShowInvoice(true)}
                       >
                         🖨 Reprint Invoice
@@ -5912,17 +5942,9 @@ alert(
                       <button
   type="button"
   onClick={handleClearOfflineCart}
-  style={{
-    background: "#ff4d4f",
-    color: "white",
-    border: "none",
-    padding: "10px 16px",
-    borderRadius: "6px",
-    cursor: "pointer",
-    marginRight: "10px"
-  }}
+  className="offline-pos-clear-btn"
 >
-  Clear Cart
+  Clear cart
 </button>
 
 
@@ -5949,11 +5971,11 @@ alert(
 
       </div>
       {showInvoice && invoiceData && (
-        <div className="invoice-print">
-          <div id="invoice-pdf" className="invoice-container compact-invoice">
+        <div className="offline-pos-invoice-print">
+          <div id="invoice-pdf" className="offline-pos-invoice">
 
             {/* ================= HEADER (CENTER) ================= */}
-            <div className="invoice-header">
+            <div className="offline-pos-invoice-header">
               <h2>TANISHKA IMITATION JEWELLERY</h2>
               <p>Streets Of Europe, Hinjewadi, Pune</p>
               <p>Pune, PIN CODE-412101.</p>
@@ -5962,34 +5984,42 @@ alert(
             </div>
 
             {/* ========== INVOICE + CUSTOMER INFO (LEFT / TOP) ========== */}
-            <div className="invoice-top-info">
+            <div className="offline-pos-invoice-top">
               <p><strong>Invoice No :</strong> {invoiceData.invoiceNumber}</p>
               <p><strong>Date :</strong> {invoiceData.invoiceDate.toLocaleDateString()}</p>
-              <p><strong>Name :</strong> {invoiceData.customer.fullName}</p>
-              <p><strong>Address :</strong> {invoiceData.customer.addressLine1}</p>
+              <p><strong>Customer :</strong> {invoiceData.customer.fullName || 'Walk-in Customer'}</p>
+              <p><strong>Mobile :</strong> {invoiceData.customer.phoneNumber || '—'}</p>
+              {invoiceData.customer.email && <p><strong>Email :</strong> {invoiceData.customer.email}</p>}
+              <p><strong>Address :</strong> {[invoiceData.customer.addressLine1, invoiceData.customer.addressLine2, invoiceData.customer.city, invoiceData.customer.state, invoiceData.customer.pincode].filter(Boolean).join(', ') || '—'}</p>
               <p><strong>GSTN No :</strong> {invoiceData.customer.gst || 'N/A'}</p>
             </div>
 
             {/* ================= ITEM TABLE (BELOW) ================= */}
-            <table className="invoice-table">
+            <table className="offline-pos-invoice-table">
               <thead>
                 <tr>
                   <th>Sr</th>
                   <th>Item Name</th>
+                  <th>Product Code</th>
                   <th>Qty</th>
                   <th>Rate</th>
+                  <th>GST Rate</th>
+                  <th>GST Amount</th>
                   <th>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {invoiceData.items.map((item, index) => {
-                  const lineTotal = item.price * item.quantity;
+                  const lineTotal = Number(item.price || 0) * Number(item.quantity || 0);
                   return (
                     <tr key={index}>
                       <td>{index + 1}</td>
                       <td>{item.productName}</td>
+                      <td>{item.productCode || '—'}</td>
                       <td>{item.quantity}</td>
-                      <td>{item.price.toFixed(2)}</td>
+                      <td>{Number(item.price || 0).toFixed(2)}</td>
+                      <td>{Number(item.gstRate || 0)}% ({item.gstType || 'exclusive'})</td>
+                      <td>{Number(item.gstAmount || 0).toFixed(2)}</td>
                       <td>{lineTotal.toFixed(2)}</td>
                     </tr>
                   );
@@ -5998,42 +6028,50 @@ alert(
             </table>
 
             {/* ================= TOTALS (RIGHT) ================= */}
-            <div className="invoice-summary">
+            <div className="offline-pos-invoice-summary">
               <div>
                 <span>Total :</span>
                 <span>₹{invoiceData.subtotal.toFixed(2)}</span>
               </div>
-              <div>
-                <span>IGST @ {(invoiceData.gstRate * 100).toFixed(0)}% :</span>
-                <span>₹{invoiceData.gstAmount.toFixed(2)}</span>
-              </div>
+              {Number(invoiceData.includedGstAmount || 0) > 0 && (
+                <div>
+                  <span>GST included in item prices :</span>
+                  <span>₹{Number(invoiceData.includedGstAmount || 0).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(invoiceData.gstAddedToTotal || 0) > 0 && (
+                <div>
+                  <span>GST added (exclusive items) :</span>
+                  <span>₹{Number(invoiceData.gstAddedToTotal || 0).toFixed(2)}</span>
+                </div>
+              )}
               {invoiceData.shippingFee > 0 && (
   <div>
     <span>Shipping :</span>
     <span>₹{invoiceData.shippingFee.toFixed(2)}</span>
   </div>
 )}
-              <div className="net-total">
+              <div className="offline-pos-invoice-net-total">
                 <span>Net Total :</span>
                 <span>₹{invoiceData.total.toFixed(2)}</span>
               </div>
             </div>
 
             {/* ================= AMOUNT IN WORDS ================= */}
-            <p className="amount-words">
+            <p className="offline-pos-invoice-words">
               {convertNumberToWords(invoiceData.total)} Only
             </p>
 
             {/* ================= FOOTER ================= */}
-            <div className="invoice-footer">
+            <div className="offline-pos-invoice-footer">
               <div>
                 <p><strong>Invoice No :</strong> {invoiceData.invoiceNumber}</p>
                 <p><strong>Date :</strong> {invoiceData.invoiceDate.toLocaleDateString()}</p>
               </div>
 
-              <div className="signature">
+              <div className="offline-pos-invoice-signature">
                 <p>For TANISHKA IMITATION JEWELLERY</p>
-                <div className="signature-line">Receiver's Signature</div>
+                <div className="offline-pos-invoice-signature-line">Receiver's Signature</div>
               </div>
             </div>
 
