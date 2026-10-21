@@ -8,6 +8,9 @@ import {
 import {
   collection,
   getDocs,
+  doc,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -182,10 +185,9 @@ const BarcodePrintingPage = () => {
   ] = useState([]);
   const [isProductsLoading, setIsProductsLoading] = useState(false);
   const [printStatusFilter, setPrintStatusFilter] = useState("not-printed");
-  const [printedCounts, setPrintedCounts] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("barcodePrintedQuantities:v1") || "{}"); }
-    catch { return {}; }
-  });
+  const [printedCounts, setPrintedCounts] = useState({});
+  const [isPrintHistoryLoading, setIsPrintHistoryLoading] = useState(true);
+  const [isSavingPrintHistory, setIsSavingPrintHistory] = useState(false);
 
   const [
     selectedCollectionId,
@@ -214,6 +216,36 @@ const [productCodeSearch, setProductCodeSearch] = useState("");
     "THERMAL_32_5X18"
   );
 
+
+  /* =======================================================
+     LOAD PERSISTENT PRINT HISTORY FROM FIRESTORE
+     One compact document per product source; survives browser
+     refreshes and is shared across signed-in devices.
+  ======================================================= */
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPrintHistory = async () => {
+      setIsPrintHistoryLoading(true);
+      try {
+        const historySnap = await getDocs(collection(db, "barcodePrintHistory"));
+        const history = {};
+        historySnap.forEach((historyDoc) => {
+          const data = historyDoc.data() || {};
+          const key = data.trackingKey || historyDoc.id;
+          history[key] = Math.max(0, Number(data.printedQuantity) || 0);
+        });
+        if (!cancelled) setPrintedCounts(history);
+      } catch (error) {
+        console.error("Could not load barcode print history from Firestore:", error);
+        if (!cancelled) alert("Barcode print history could not be loaded from Firebase. Check Firestore rules and connection before printing.");
+      } finally {
+        if (!cancelled) setIsPrintHistoryLoading(false);
+      }
+    };
+    loadPrintHistory();
+    return () => { cancelled = true; };
+  }, []);
 
   /* =======================================================
      FETCH COLLECTIONS
@@ -399,10 +431,6 @@ const getProductStock = (product) => {
   const getPrintedCount = (product) => Math.max(0, Number(printedCounts[getPrintTrackingKey(product)] || 0));
   const getRemainingPrintQuantity = (product) => Math.max(0, getProductStock(product) - getPrintedCount(product));
 
-  useEffect(() => {
-    try { localStorage.setItem("barcodePrintedQuantities:v1", JSON.stringify(printedCounts)); }
-    catch (error) { console.warn("Could not save barcode print history in this browser.", error); }
-  }, [printedCounts]);
 
   const printableProducts = useMemo(() => {
   const result = [];
@@ -1514,27 +1542,52 @@ const createPrintQR = async (productCode) => {
       );
 
 
-      printWindow.onafterprint = () => {
-        // Browsers fire afterprint even when the user cancels, so confirm before recording labels.
-        const printedSuccessfully = window.confirm("Did the labels print successfully? Select OK to mark these quantities as printed, or Cancel to leave them pending.");
+      printWindow.onafterprint = async () => {
+        // Browser fires afterprint even if cancelled, so confirm before saving quantities.
+        const printedSuccessfully = window.confirm("Did the labels print successfully? Select OK to save these quantities to Firebase, or Cancel to leave them pending.");
         if (printedSuccessfully) {
           const countsToAdd = {};
           printableProducts.forEach((product) => {
             const key = getPrintTrackingKey(product);
             countsToAdd[key] = (countsToAdd[key] || 0) + 1;
           });
-          setPrintedCounts((previous) => {
-            const next = { ...previous };
-            Object.entries(countsToAdd).forEach(([key, count]) => {
+          setIsSavingPrintHistory(true);
+          try {
+            const updates = Object.entries(countsToAdd).map(async ([key, count]) => {
               const product = products.find((item) => getPrintTrackingKey(item) === key);
               const stock = product ? getProductStock(product) : Number.MAX_SAFE_INTEGER;
-              next[key] = Math.min(stock, Number(previous[key] || 0) + count);
+              const nextCount = Math.min(stock, Number(printedCounts[key] || 0) + count);
+              // encodeURIComponent keeps the composite product key safe as a Firestore document ID.
+              const historyDocId = encodeURIComponent(key);
+              await setDoc(doc(db, "barcodePrintHistory", historyDocId), {
+                trackingKey: key,
+                collectionId: product?.collectionId || "",
+                subcollectionId: product?.subcollectionId || "",
+                destination: product?.destination || "",
+                productDocumentId: product?.productDocumentId || product?.id || "",
+                productCode: getProductCode(product),
+                productName: product?.productName || product?.name || "",
+                stockQuantity: stock,
+                printedQuantity: nextCount,
+                updatedAt: serverTimestamp(),
+              }, { merge: true });
+              return [key, nextCount];
             });
-            return next;
-          });
-          setSelectedProductIds([]);
-          setProductQuantities({});
-          setPrintStatusFilter("not-printed");
+            const savedCounts = await Promise.all(updates);
+            setPrintedCounts((previous) => {
+              const next = { ...previous };
+              savedCounts.forEach(([key, count]) => { next[key] = count; });
+              return next;
+            });
+            setSelectedProductIds([]);
+            setProductQuantities({});
+            setPrintStatusFilter("not-printed");
+          } catch (error) {
+            console.error("Failed to save barcode print history to Firebase:", error);
+            alert("The labels may have printed, but Firebase could not save the print history. Check your connection and Firestore rules, then retry or reconcile the printed quantity.");
+          } finally {
+            setIsSavingPrintHistory(false);
+          }
         }
         setTimeout(() => {
           try { printWindow.close(); } catch (error) { console.error(error); }
@@ -2098,7 +2151,7 @@ const createPrintQR = async (productCode) => {
         className="primary-btn"
 
         disabled={
-          totalLabelCount === 0
+          totalLabelCount === 0 || isPrintHistoryLoading || isSavingPrintHistory
         }
 
         onClick={
@@ -2106,9 +2159,9 @@ const createPrintQR = async (productCode) => {
         }
       >
 
-        🖨️ Print QR Labels
+        {isPrintHistoryLoading ? "Loading Firebase print history…" : isSavingPrintHistory ? "Saving print history to Firebase…" : "🖨️ Print QR Labels"}
 
-        {totalLabelCount > 0 && (
+        {totalLabelCount > 0 && !isPrintHistoryLoading && !isSavingPrintHistory && (
 
           <>
             {" "}

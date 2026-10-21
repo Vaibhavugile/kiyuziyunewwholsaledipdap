@@ -29,6 +29,7 @@ import { getPriceForQuantity, getCartItemId, useCart, createStablePricingId } fr
 import './AdminPage.css';
 import './OfflineBillingGST.css';
 import './QuickAddProduct.css';
+import './AdminProductEditLayout.css';
 import './SaasUsers.css';
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
@@ -855,25 +856,37 @@ useEffect(() => {
     setIsProductLoading(false);
   };
 
-  // Fetch every product in the selected main collection, across all subcollections and both destinations.
-  const fetchAllCollectionProducts = async () => {
-    if (!selectedMainCollectionId) { setAllCollectionProducts([]); return; }
+  // Fetch all products for the selected collection concurrently instead of waiting
+  // for each subcollection one by one. This reduces total loading time substantially.
+  const fetchAllCollectionProducts = async (collectionId = selectedMainCollectionId) => {
+    if (!collectionId) {
+      setAllCollectionProducts([]);
+      return;
+    }
+
     setIsProductLoading(true);
     try {
-      const subsSnap = await getDocs(collection(db, 'collections', selectedMainCollectionId, 'subcollections'));
-      const all = [];
-      for (const subDoc of subsSnap.docs) {
+      const subsSnap = await getDocs(collection(db, 'collections', collectionId, 'subcollections'));
+      const subDocs = subsSnap.docs;
+
+      // Fetch both product destinations for every subcollection in parallel.
+      const productGroups = await Promise.all(subDocs.map(async (subDoc) => {
         const subcollectionData = { id: subDoc.id, ...subDoc.data() };
-        const base = ['collections', selectedMainCollectionId, 'subcollections', subDoc.id];
+        const base = ['collections', collectionId, 'subcollections', subDoc.id];
         const [websiteSnap, appSnap] = await Promise.all([
           getDocs(collection(db, ...base, 'products')),
           getDocs(collection(db, ...base, 'appProducts')),
         ]);
-        const appendProduct = (d, destination) => {
-          const data = d.data();
-          all.push({
-            ...data, id: d.id, destination, subcollectionId: subDoc.id,
-            subcollectionName: subcollectionData.name || 'Unnamed subcollection', subcollectionData,
+
+        const mapProduct = (productDoc, destination) => {
+          const data = productDoc.data();
+          return {
+            ...data,
+            id: productDoc.id,
+            destination,
+            subcollectionId: subDoc.id,
+            subcollectionName: subcollectionData.name || 'Unnamed subcollection',
+            subcollectionData,
             purchasePrice: data.purchasePrice ?? data.purchaseRate ?? subcollectionData.purchasePrice ?? subcollectionData.purchaseRate ?? 0,
             purchaseRate: data.purchaseRate ?? data.purchasePrice ?? subcollectionData.purchaseRate ?? subcollectionData.purchasePrice ?? 0,
             retailPrice: data.retailPrice ?? data.salePrice ?? data.price ?? subcollectionData.retailPrice ?? subcollectionData.salePrice ?? subcollectionData.price ?? 0,
@@ -881,16 +894,25 @@ useEffect(() => {
             gstRate: data.gstRate ?? data.gst_rate ?? subcollectionData.gstRate ?? 0,
             gstType: data.gstType ?? data.gst_type ?? subcollectionData.gstType ?? 'exclusive',
             quantity: data.quantity ?? data.current_stock ?? subcollectionData.quantity ?? subcollectionData.current_stock ?? 0,
-          });
+          };
         };
-        websiteSnap.docs.forEach(d => appendProduct(d, 'products'));
-        appSnap.docs.forEach(d => appendProduct(d, 'appProducts'));
+
+        return [
+          ...websiteSnap.docs.map((d) => mapProduct(d, 'products')),
+          ...appSnap.docs.map((d) => mapProduct(d, 'appProducts')),
+        ];
+      }));
+
+      // Ignore stale responses if the admin switched collections while loading.
+      if (collectionId === selectedMainCollectionId) {
+        setAllCollectionProducts(productGroups.flat());
       }
-      setAllCollectionProducts(all);
     } catch (error) {
       console.error('Error fetching all products for collection:', error);
       alert('Could not load all products for this collection. Check the console for details.');
-    } finally { setIsProductLoading(false); }
+    } finally {
+      setIsProductLoading(false);
+    }
   };
 
   // UseEffects to trigger data fetching on dependency changes
@@ -4765,7 +4787,7 @@ alert(
 
                     {productEntryMode === 'manage' && <>
                     {selectedSubcollectionId && (
-                      <div className="add-collection-form">
+                      <div className="admin-product-edit-shell">
 
                         <h3>Add/Edit Products</h3>
 
@@ -4788,7 +4810,7 @@ alert(
                           // This block shows either the product form or the file input
                           <>
                             {showProductForm ? (
-                              <form onSubmit={editingProduct ? handleUpdateProduct : (currentImageIndex < newProducts.length ? handleNextProduct : handleAddAllProducts)} className="bulk-upload-form">
+                              <form onSubmit={editingProduct ? handleUpdateProduct : (currentImageIndex < newProducts.length ? handleNextProduct : handleAddAllProducts)} className="admin-product-edit-form">
                                 {editingProduct ? (
                                   <>
                                     <div className="product-form-item">

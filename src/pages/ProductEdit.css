@@ -1,0 +1,365 @@
+/* Product Edit Form — scoped styles for AdminPage.jsx
+   Import with: import './ProductEdit.css';
+*/
+.product-edit-form {
+  --pe-ink: #211b22;
+  --pe-muted: #746b76;
+  --pe-line: #e9e1e9;
+  --pe-surface: #fff;
+  --pe-soft: #fbf7fa;
+  --pe-accent: #79172c;
+  --pe-accent-dark: #5e1021;
+  width: 100%;
+  max-width: 1180px;
+  margin: 20px auto;
+  padding: clamp(18px, 3vw, 34px);
+  display: grid;
+  grid-template-columns: minmax(250px, 0.82fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 26px;
+  background: var(--pe-surface);
+  border: 1px solid var(--pe-line);
+  border-radius: 22px;
+  box-shadow: 0 16px 48px rgba(43, 18, 35, 0.08);
+  color: var(--pe-ink);
+  box-sizing: border-box;
+}
+.product-edit-form * { box-sizing: border-box; }
+.product-edit-form .product-form-item {
+  display: contents;
+}
+.product-edit-form .product-edit-image-panel {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--pe-line);
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fff 0%, var(--pe-soft) 100%);
+  position: sticky;
+  top: 18px;
+}
+.product-edit-form .product-edit-image-preview-wrap {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  min-height: 250px;
+  max-height: 440px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #f5f0f4;
+  border: 1px solid #eee4ec;
+  border-radius: 14px;
+}
+.product-edit-form .product-preview-image.product-edit-main-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+}
+.product-edit-form .product-edit-image-placeholder {
+  color: var(--pe-muted);
+  font-size: 14px;
+  padding: 22px;
+  text-align: center;
+}
+.product-edit-form .product-edit-image-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px dashed #bd8797;
+  border-radius: 12px;
+  background: #fff9fb;
+  color: var(--pe-accent);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.product-edit-form .product-edit-image-upload:hover {
+  border-color: var(--pe-accent);
+  background: #fff0f4;
+  transform: translateY(-1px);
+}
+.product-edit-form .product-edit-image-upload input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.product-edit-form .product-edit-image-upload-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: var(--pe-accent);
+  color: #fff;
+  font-size: 19px;
+  line-height: 1;
+}
+.product-edit-form .product-edit-crop-button {
+  width: 100%;
+  margin-top: 9px;
+}
+.product-edit-form .product-edit-image-help {
+  margin: 10px 2px 0;
+  color: var(--pe-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.product-edit-form .product-details-inputs.product-edit-fields {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 17px;
+  min-width: 0;
+}
+.product-edit-form .product-edit-field,
+.product-edit-form .form-group {
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.product-edit-form .product-edit-name-field,
+.product-edit-form .product-edit-additional-images,
+.product-edit-form .variation-input-container,
+.product-edit-form .variation-input,
+.product-edit-form .tiered-pricing-container1 {
+  grid-column: 1 / -1;
+}
+.product-edit-form .form-group label,
+.product-edit-form .product-edit-field label,
+.product-edit-form .tiered-pricing-container1 .form-group label {
+  display: block;
+  color: #352a36;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: .01em;
+}
+.product-edit-form input:not([type="radio"]):not([type="checkbox"]):not([type="file"]),
+.product-edit-form select,
+.product-edit-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid #ded4de;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pe-ink);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.product-edit-form input:focus,
+.product-edit-form select:focus,
+.product-edit-form textarea:focus {
+  border-color: #a34b65;
+  box-shadow: 0 0 0 3px rgba(121, 23, 44, .10);
+  background: #fff;
+}
+.product-edit-form input[type="file"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 12px;
+  border: 1px dashed #d8c8d4;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pe-muted);
+  font-size: 12px;
+}
+.product-edit-form .variation-input-container,
+.product-edit-form .tiered-pricing-container1 {
+  padding: 18px;
+  border: 1px solid var(--pe-line);
+  border-radius: 15px;
+  background: #fdfafd;
+}
+.product-edit-form .variation-input-container h4,
+.product-edit-form .tiered-pricing-container1 h4 {
+  margin: 0 0 8px;
+  color: var(--pe-ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+.product-edit-form .tiered-pricing-container1 > p {
+  margin: 0 0 16px;
+  color: var(--pe-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.product-edit-form .tiered-pricing-container1 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.product-edit-form .tiered-pricing-container1 > h4,
+.product-edit-form .tiered-pricing-container1 > p {
+  grid-column: 1 / -1;
+}
+.product-edit-form .variations-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.product-edit-form .variation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--pe-line);
+  border-radius: 10px;
+  color: #423744;
+  font-size: 13px;
+}
+.product-edit-form .variation-input {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+}
+.product-edit-form .variation-input input {
+  min-width: 0;
+}
+.product-edit-form .add-variation-btn,
+.product-edit-form .remove-variation-btn,
+.product-edit-form .crop-button,
+.product-edit-form .delete-button,
+.product-edit-form .submit-all-button,
+.product-edit-form .cancel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 10px 15px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.product-edit-form .add-variation-btn,
+.product-edit-form .crop-button {
+  color: var(--pe-accent);
+  border-color: #e4c7d1;
+  background: #fff5f8;
+}
+.product-edit-form .remove-variation-btn,
+.product-edit-form .delete-button {
+  color: #a21e35;
+  border-color: #f0cbd2;
+  background: #fff4f5;
+}
+.product-edit-form .submit-all-button {
+  grid-column: 2;
+  justify-self: start;
+  min-width: 170px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--pe-accent), #9b2947);
+  box-shadow: 0 7px 18px rgba(121, 23, 44, .18);
+}
+.product-edit-form .cancel-button {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: -12px;
+  min-width: 110px;
+  color: #514650;
+  border-color: #ded4de;
+  background: #fff;
+}
+.product-edit-form .add-variation-btn:hover,
+.product-edit-form .crop-button:hover,
+.product-edit-form .delete-button:hover,
+.product-edit-form .submit-all-button:hover,
+.product-edit-form .cancel-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(35, 15, 30, .09);
+}
+.product-edit-form button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.product-edit-form .product-edit-additional-images {
+  padding: 15px;
+  border: 1px solid var(--pe-line);
+  border-radius: 13px;
+  background: #fff;
+}
+.product-edit-form .product-edit-additional-images label {
+  margin-bottom: 2px;
+}
+.product-edit-form .product-edit-additional-images input[type="file"] {
+  margin-top: 2px;
+}
+@media (max-width: 860px) {
+  .product-edit-form {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+    gap: 20px;
+  }
+  .product-edit-form .product-edit-image-panel {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+    width: 100%;
+  }
+  .product-edit-form .product-edit-image-preview-wrap {
+    aspect-ratio: 1 / 1;
+    min-height: 220px;
+    max-height: 340px;
+  }
+  .product-edit-form .product-details-inputs.product-edit-fields {
+    grid-column: 1;
+  }
+  .product-edit-form .submit-all-button,
+  .product-edit-form .cancel-button {
+    grid-column: 1;
+  }
+}
+@media (max-width: 560px) {
+  .product-edit-form {
+    margin: 12px auto;
+    padding: 13px;
+    border-radius: 15px;
+  }
+  .product-edit-form .product-details-inputs.product-edit-fields,
+  .product-edit-form .tiered-pricing-container1 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .product-edit-form .tiered-pricing-container1 > h4,
+  .product-edit-form .tiered-pricing-container1 > p {
+    grid-column: 1;
+  }
+  .product-edit-form .variation-input {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .product-edit-form .submit-all-button,
+  .product-edit-form .cancel-button {
+    width: 100%;
+  }
+}
