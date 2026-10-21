@@ -1,0 +1,141 @@
+/* Tanishka — Wholesale Business Section */
+.wholesale-business {
+  --wholesale-maroon: #3b090d;
+  --wholesale-gold: #e4b34f;
+  --wholesale-gold-light: #f5d37d;
+  --wholesale-ivory: #fffaf1;
+  width: 100%;
+  padding: clamp(28px, 5vw, 66px) clamp(14px, 4vw, 56px);
+  background: var(--wholesale-ivory);
+  box-sizing: border-box;
+}
+.wholesale-business *, .wholesale-business *::before, .wholesale-business *::after { box-sizing: border-box; }
+.wholesale-business__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+  width: min(1240px, 100%);
+  min-height: 350px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--wholesale-maroon);
+  border: 1px solid rgba(190, 145, 65, .5);
+  border-radius: 5px;
+  box-shadow: 0 18px 44px rgba(58, 15, 18, .12);
+}
+.wholesale-business__image-wrap {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 35% 40%, rgba(228,179,79,.25), transparent 48%), #2b080b;
+}
+.wholesale-business__image {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  object-fit: cover; object-position: center;
+  transition: transform 700ms cubic-bezier(.2,.7,.2,1);
+}
+.wholesale-business__inner:hover .wholesale-business__image { transform: scale(1.045); }
+.wholesale-business__image-shade {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(30,4,7,.02) 42%, rgba(38,5,9,.32) 100%);
+}
+.wholesale-business__image-caption {
+  position: absolute; left: 22px; bottom: 20px; max-width: calc(100% - 44px);
+  padding: 9px 13px; color: #fff7e7; background: rgba(48,7,12,.7);
+  border: 1px solid rgba(245,211,125,.45); border-radius: 2px;
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  backdrop-filter: blur(8px);
+}
+.wholesale-business__content {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start;
+  justify-content: center; padding: clamp(28px, 4vw, 54px); color: #fff8ec;
+  background: radial-gradient(ellipse at 100% 0%, rgba(125,40,39,.35), transparent 55%),
+    linear-gradient(135deg, #4a0d12 0%, #300609 100%);
+}
+.wholesale-business__content::before {
+  position: absolute; top: 22px; right: 22px; bottom: 22px; left: 22px;
+  border: 1px solid rgba(228,179,79,.18); content: ""; pointer-events: none;
+}
+.wholesale-business__eyebrow {
+  position: relative; margin-bottom: 14px; color: var(--wholesale-gold-light);
+  font-size: 10px; font-weight: 700; letter-spacing: .2em; line-height: 1.5;
+}
+.wholesale-business__content h2 {
+  position: relative; margin: 0; color: #fff8ed;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(30px, 3.2vw, 43px); font-weight: 500;
+  letter-spacing: -.035em; line-height: 1.12;
+}
+.wholesale-business__content h2 span { display: block; margin-top: 4px; color: var(--wholesale-gold-light); }
+.wholesale-business__description {
+  position: relative; max-width: 420px; margin: 17px 0 20px;
+  color: rgba(255,248,236,.78); font-size: 13px; line-height: 1.75;
+}
+.wholesale-business__benefits {
+  position: relative; display: grid; gap: 12px; width: 100%;
+  margin: 0 0 25px; padding: 0; list-style: none;
+}
+.wholesale-business__benefits li {
+  display: flex; align-items: center; gap: 12px; color: #fff8ec;
+  font-size: 13px; font-weight: 500; line-height: 1.4;
+}
+.wholesale-business__icon {
+  display: inline-flex; flex: 0 0 30px; align-items: center; justify-content: center;
+  width: 30px; height: 30px; color: var(--wholesale-gold);
+  border: 1px solid rgba(228,179,79,.42); border-radius: 50%;
+  background: rgba(228,179,79,.06);
+}
+.wholesale-business__icon svg { width: 18px; height: 18px; }
+.wholesale-business__cta {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  gap: 13px; min-height: 48px; padding: 0 22px; color: #3b1908;
+  background: linear-gradient(135deg, #f4d17c, #dfa23d);
+  border: 1px solid #f8df9b; border-radius: 3px;
+  box-shadow: 0 5px 16px rgba(0,0,0,.18);
+  font-size: 12px; font-weight: 800; letter-spacing: .015em; text-decoration: none;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+.wholesale-business__cta:hover {
+  transform: translateY(-2px); background: linear-gradient(135deg, #ffe39a, #edb84f);
+  box-shadow: 0 9px 22px rgba(0,0,0,.25);
+}
+.wholesale-business__cta:focus-visible { outline: 3px solid #fff2c9; outline-offset: 4px; }
+.wholesale-business__cta svg { transition: transform 180ms ease; }
+.wholesale-business__cta:hover svg { transform: translateX(3px); }
+.wholesale-business__note {
+  position: relative; margin: 14px 0 0; color: rgba(255,248,236,.58);
+  font-size: 10px; line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .wholesale-business { padding: 28px 18px; }
+  .wholesale-business__inner { grid-template-columns: minmax(0,1fr) minmax(0,1fr); min-height: 320px; }
+  .wholesale-business__image-wrap { min-height: 350px; }
+  .wholesale-business__content { padding: 30px 25px; }
+  .wholesale-business__content::before { top: 13px; right: 13px; bottom: 13px; left: 13px; }
+  .wholesale-business__content h2 { font-size: clamp(27px,4vw,36px); }
+  .wholesale-business__benefits { gap: 10px; }
+}
+@media (max-width: 600px) {
+  .wholesale-business { padding: 22px 12px; }
+  .wholesale-business__inner { grid-template-columns: minmax(0,1fr); border-radius: 4px; }
+  .wholesale-business__image-wrap { min-height: 0; aspect-ratio: 1.48 / 1; }
+  .wholesale-business__image { object-position: center 54%; }
+  .wholesale-business__image-shade { background: linear-gradient(0deg, rgba(34,4,8,.35) 0%, transparent 52%); }
+  .wholesale-business__image-caption {
+    left: 12px; bottom: 12px; max-width: calc(100% - 24px);
+    padding: 7px 9px; font-size: 8px; letter-spacing: .06em;
+  }
+  .wholesale-business__content { padding: 25px 23px 24px; }
+  .wholesale-business__content::before { top: 10px; right: 10px; bottom: 10px; left: 10px; }
+  .wholesale-business__eyebrow { margin-bottom: 9px; font-size: 8px; letter-spacing: .17em; }
+  .wholesale-business__content h2 { font-size: clamp(27px,7.5vw,35px); line-height: 1.08; }
+  .wholesale-business__description { margin: 12px 0 16px; font-size: 12px; line-height: 1.6; }
+  .wholesale-business__benefits { grid-template-columns: minmax(0,1fr); gap: 9px; margin-bottom: 19px; }
+  .wholesale-business__benefits li { gap: 10px; font-size: 12px; }
+  .wholesale-business__icon { flex-basis: 27px; width: 27px; height: 27px; }
+  .wholesale-business__icon svg { width: 16px; height: 16px; }
+  .wholesale-business__cta { width: 100%; min-height: 45px; padding: 0 15px; font-size: 12px; }
+  .wholesale-business__note { margin-top: 11px; font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wholesale-business__image, .wholesale-business__cta, .wholesale-business__cta svg { transition: none; }
+}

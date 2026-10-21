@@ -1,0 +1,182 @@
+/* ---------- TANISHKA INSTAGRAM REELS SECTION ---------- */
+.reels-section {
+  --reels-maroon: #4a101b;
+  --reels-maroon-deep: #31080e;
+  --reels-gold: #b88a43;
+  --reels-gold-light: #dfbd78;
+  --reels-ivory: #fffaf2;
+  position: relative;
+  isolation: isolate;
+  padding: clamp(54px, 7vw, 88px) 0 clamp(64px, 8vw, 100px);
+  background:
+    radial-gradient(ellipse at 18% 12%, rgba(184, 138, 67, 0.16), transparent 36%),
+    radial-gradient(ellipse at 88% 80%, rgba(74, 16, 27, 0.07), transparent 38%),
+    linear-gradient(145deg, #f2e4cf 0%, #fbf4e8 46%, #eee0ca 100%);
+  overflow: hidden;
+  color: var(--reels-maroon);
+  border-top: 1px solid rgba(184, 138, 67, 0.18);
+}
+
+.reels-section::before {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 50%;
+  width: min(900px, 100%);
+  height: 360px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(184, 138, 67, 0.17), transparent 70%);
+  content: "";
+  pointer-events: none;
+}
+
+.reels-section::after {
+  position: absolute;
+  z-index: -1;
+  right: -90px;
+  bottom: 10px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(184, 138, 67, 0.14);
+  border-radius: 50%;
+  box-shadow: 0 0 0 18px rgba(184, 138, 67, 0.025), 0 0 0 36px rgba(184, 138, 67, 0.02);
+  content: "";
+  pointer-events: none;
+}
+
+.reels-header-wrapper {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto clamp(30px, 4vw, 48px);
+  padding: 0 22px;
+  text-align: center;
+}
+
+.reels-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.reels-eyebrow {
+  display: inline-block;
+  margin-bottom: 13px;
+  color: var(--reels-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.reels-header h2 {
+  margin: 0;
+  color: var(--reels-maroon);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 3.6vw, 3.15rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.reels-header h2 span {
+  display: block;
+  margin-top: 4px;
+  color: #9a7135;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.reels-header p {
+  max-width: 540px;
+  margin: 14px 0 0;
+  color: #76665c;
+  font-size: clamp(0.9rem, 1.3vw, 1.02rem);
+  font-weight: 400;
+  line-height: 1.75;
+}
+
+.reels-heading-ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 21px;
+  color: var(--reels-gold);
+}
+
+.reels-heading-ornament span {
+  display: block;
+  width: 42px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--reels-gold));
+}
+
+.reels-heading-ornament span:last-child {
+  transform: rotate(180deg);
+}
+
+.reels-heading-ornament i {
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* The carousel remains owned by ReelsCarousel; these rules only theme its section. */
+.reels-section a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .reels-section {
+    padding: 48px 0 64px;
+  }
+
+  .reels-header-wrapper {
+    margin-bottom: 28px;
+    padding: 0 18px;
+  }
+
+  .reels-eyebrow {
+    margin-bottom: 10px;
+    font-size: 8px;
+    letter-spacing: 0.18em;
+  }
+
+  .reels-header h2 {
+    font-size: clamp(1.8rem, 7vw, 2.35rem);
+    line-height: 1.12;
+  }
+
+  .reels-header p {
+    max-width: 330px;
+    margin-top: 10px;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .reels-heading-ornament {
+    margin-top: 15px;
+  }
+
+  .reels-heading-ornament span {
+    width: 30px;
+  }
+
+  .reels-section::after {
+    right: -150px;
+    bottom: 0;
+    width: 200px;
+    height: 200px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reels-section *,
+  .reels-section *::before,
+  .reels-section *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
