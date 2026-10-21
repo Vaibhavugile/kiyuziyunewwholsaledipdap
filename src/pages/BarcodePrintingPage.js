@@ -15,13 +15,26 @@ import QRCode from "qrcode";
 
 import "./Barcode.css";
 
+// QR labels use the product code, not the Firestore document ID.
+const getProductCode = (product) => String(product?.productCode || "").trim();
+const getProductPrice = (product) => {
+  const candidates = [product?.resolvedRetailPrice, product?.sellingPrice, product?.salePrice, product?.price, product?.retailPrice, product?.mrp];
+  const value = candidates.find((v) => v !== undefined && v !== null && v !== "");
+  if (value === undefined) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
+const formatLabelPrice = (product) => {
+  const price = getProductPrice(product);
+  return price === null ? "Price: N/A" : `Price: ₹${price.toFixed(2)}`;
+};
+
 /* =========================================================
    SCREEN QR LABEL
 ========================================================= */
 
 const BarcodeLabel = ({
   product,
-  subcollectionName,
   printLayout,
 }) => {
   const svgRef = useRef(null);
@@ -32,15 +45,12 @@ const BarcodeLabel = ({
     const generateQRCode = async () => {
       svgRef.current.innerHTML = "";
 
-      const productId = String(
-        product?.id || ""
-      ).trim();
-
-      if (!productId) return;
+      const productCode = getProductCode(product);
+      if (!productCode) return;
 
       try {
         const qrSvg = await QRCode.toString(
-          productId,
+          productCode,
           {
             type: "svg",
             errorCorrectionLevel: "L",
@@ -82,7 +92,7 @@ const BarcodeLabel = ({
 
         svgRef.current.setAttribute(
           "data-qr-value",
-          productId
+          productCode
         );
 
         svgRef.current.setAttribute(
@@ -106,7 +116,7 @@ const BarcodeLabel = ({
     };
 
     generateQRCode();
-  }, [product?.id]);
+  }, [product?.productCode]);
 
   const productName =
     product?.productName ||
@@ -114,7 +124,8 @@ const BarcodeLabel = ({
     "";
 
   const productCode =
-    product?.productCode || "-";
+    getProductCode(product) || "-";
+  const productPrice = formatLabelPrice(product);
 
   const isLarge =
     printLayout ===
@@ -141,13 +152,8 @@ const BarcodeLabel = ({
           {productName}
         </strong>
 
-        <div>
-          {subcollectionName}
-        </div>
-
-        <div>
-          Code: {productCode}
-        </div>
+        <div className="screen-label-code">Code: {productCode}</div>
+        <div className="screen-label-price">{productPrice}</div>
       </div>
     </div>
   );
@@ -171,23 +177,19 @@ const BarcodePrintingPage = () => {
   ] = useState([]);
 
   const [
-    subcollections,
-    setSubcollections,
-  ] = useState([]);
-
-  const [
     products,
     setProducts,
   ] = useState([]);
+  const [isProductsLoading, setIsProductsLoading] = useState(false);
+  const [printStatusFilter, setPrintStatusFilter] = useState("not-printed");
+  const [printedCounts, setPrintedCounts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("barcodePrintedQuantities:v1") || "{}"); }
+    catch { return {}; }
+  });
 
   const [
     selectedCollectionId,
     setSelectedCollectionId,
-  ] = useState("");
-
-  const [
-    selectedSubcollectionId,
-    setSelectedSubcollectionId,
   ] = useState("");
 
   const [
@@ -248,140 +250,83 @@ const [productCodeSearch, setProductCodeSearch] = useState("");
 
 
   /* =======================================================
-     FETCH SUBCOLLECTIONS
+     FETCH ALL PRODUCTS FOR THE SELECTED COLLECTION
+     Products live under each subcollection, in both `products`
+     and `appProducts`. The user selects only a collection.
   ======================================================= */
 
   useEffect(() => {
     if (!selectedCollectionId) {
-      setSubcollections([]);
-      setProducts([]);
-      setSelectedSubcollectionId("");
-      setSelectedProductIds([]);
-      setProductQuantities({});
-      return;
-    }
-
-    const fetchSubcollections =
-      async () => {
-        try {
-          const snap =
-            await getDocs(
-              collection(
-                db,
-                "collections",
-                selectedCollectionId,
-                "subcollections"
-              )
-            );
-
-          setSubcollections(
-            snap.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }))
-          );
-        } catch (error) {
-          console.error(
-            "Error fetching subcollections:",
-            error
-          );
-
-          setSubcollections([]);
-        }
-      };
-
-    setSelectedSubcollectionId("");
-    setProducts([]);
-    setSelectedProductIds([]);
-    setProductQuantities({});
-
-    fetchSubcollections();
-  }, [
-    selectedCollectionId,
-  ]);
-
-
-  /* =======================================================
-     FETCH PRODUCTS
-  ======================================================= */
-
-  useEffect(() => {
-    if (
-      !selectedCollectionId ||
-      !selectedSubcollectionId
-    ) {
+      setIsProductsLoading(false);
       setProducts([]);
       setSelectedProductIds([]);
       setProductQuantities({});
+      setProductCodeSearch("");
       return;
     }
 
-    const fetchProducts =
-      async () => {
-        try {
-          const snap =
-            await getDocs(
-              collection(
-                db,
-                "collections",
-                selectedCollectionId,
-                "subcollections",
-                selectedSubcollectionId,
-                "products"
-              )
-            );
-
-          const productList =
-            snap.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }));
-
-          setProducts(productList);
-
-          setSelectedProductIds([]);
-          setProductQuantities({});
-        } catch (error) {
-          console.error(
-            "Error fetching products:",
-            error
-          );
-
-          setProducts([]);
-        }
-      };
-
-    fetchProducts();
-  }, [
-    selectedCollectionId,
-    selectedSubcollectionId,
-  ]);
-
-
-  /* =======================================================
-     SELECTED SUBCOLLECTION NAME
-  ======================================================= */
-
-  const selectedSubcollectionName =
-    useMemo(() => {
-      const found =
-        subcollections.find(
-          (item) =>
-            item.id ===
-            selectedSubcollectionId
+    let cancelled = false;
+    const fetchCollectionProducts = async () => {
+      setIsProductsLoading(true);
+      setProducts([]);
+      setSelectedProductIds([]);
+      setProductQuantities({});
+      try {
+        const subsSnap = await getDocs(
+          collection(db, "collections", selectedCollectionId, "subcollections")
         );
+        const batches = await Promise.all(subsSnap.docs.map(async (subDoc) => {
+          const subData = subDoc.data() || {};
+          const basePath = ["collections", selectedCollectionId, "subcollections", subDoc.id];
+          const [productsSnap, appProductsSnap] = await Promise.all([
+            getDocs(collection(db, ...basePath, "products")),
+            getDocs(collection(db, ...basePath, "appProducts")),
+          ]);
+          const pricing = subData?.tieredPricing || {};
+          const retailTierSource = pricing.retail || pricing.retailPrice || pricing.Retail || pricing.customer || [];
+          const retailTiers = Array.isArray(retailTierSource)
+            ? [...retailTierSource].sort((a, b) => Number(a.min_quantity || a.minQuantity || 1) - Number(b.min_quantity || b.minQuantity || 1))
+            : [];
+          const firstRetailTier = retailTiers[0];
+          const tierPriceRaw = firstRetailTier?.price ?? firstRetailTier?.retailPrice ?? firstRetailTier?.amount;
+          const tierPrice = tierPriceRaw === undefined || tierPriceRaw === null || tierPriceRaw === "" ? null : Number(tierPriceRaw);
+          const mapProducts = (snapshot, destination) => snapshot.docs.map((productDoc) => {
+            const data = productDoc.data() || {};
+            const productPriceCandidates = [data.sellingPrice, data.salePrice, data.price, data.retailPrice, data.mrp];
+            const ownPriceRaw = productPriceCandidates.find((value) => value !== undefined && value !== null && value !== "");
+            const ownPrice = ownPriceRaw === undefined ? null : Number(ownPriceRaw);
+            return {
+              ...data,
+              id: `${subDoc.id}__${destination}__${productDoc.id}`,
+              productDocumentId: productDoc.id,
+              destination,
+              collectionId: selectedCollectionId,
+              subcollectionId: subDoc.id,
+              subcollectionName: subData.name || subData.subcollectionName || subData.title || "",
+              // Retail price comes from the owning subcollection's retail tier first.
+              resolvedRetailPrice: Number.isFinite(tierPrice) && tierPrice !== null
+                ? tierPrice
+                : (Number.isFinite(ownPrice) ? ownPrice : null),
+            };
+          });
+          return [...mapProducts(productsSnap, "products"), ...mapProducts(appProductsSnap, "appProducts")];
+        }));
+        const allProducts = batches.flat();
+        if (!cancelled) {
+          allProducts.sort((a, b) => String(a.productName || a.name || "").localeCompare(String(b.productName || b.name || "")));
+          setProducts(allProducts);
+        }
+      } catch (error) {
+        console.error("Error fetching barcode products for collection:", error);
+        if (!cancelled) setProducts([]);
+      } finally {
+        if (!cancelled) setIsProductsLoading(false);
+      }
+    };
 
-      return (
-        found?.name ||
-        found?.subcollectionName ||
-        found?.title ||
-        ""
-      );
-    }, [
-      subcollections,
-      selectedSubcollectionId,
-    ]);
-
+    fetchCollectionProducts();
+    return () => { cancelled = true; };
+  }, [selectedCollectionId]);
 
   /* =======================================================
      SELECTED PRODUCTS
@@ -444,18 +389,34 @@ const getProductStock = (product) => {
     Number(product?.quantity) || 0
   );
 };
+  const getPrintTrackingKey = (product) => [
+    product?.collectionId || "",
+    product?.subcollectionId || "",
+    product?.destination || "",
+    product?.productDocumentId || product?.id || "",
+  ].join("::");
+
+  const getPrintedCount = (product) => Math.max(0, Number(printedCounts[getPrintTrackingKey(product)] || 0));
+  const getRemainingPrintQuantity = (product) => Math.max(0, getProductStock(product) - getPrintedCount(product));
+
+  useEffect(() => {
+    try { localStorage.setItem("barcodePrintedQuantities:v1", JSON.stringify(printedCounts)); }
+    catch (error) { console.warn("Could not save barcode print history in this browser.", error); }
+  }, [printedCounts]);
+
   const printableProducts = useMemo(() => {
   const result = [];
 
   selectedProducts.forEach((product) => {
     const stock = getProductStock(product);
+    const remaining = Math.max(0, stock - Number(printedCounts[[product?.collectionId || "", product?.subcollectionId || "", product?.destination || "", product?.productDocumentId || product?.id || ""].join("::")] || 0));
 
-    const quantity = Math.max(
+    const quantity = Math.min(remaining, Math.max(
       0,
       Number(
-        productQuantities[product.id] ?? stock
+        productQuantities[product.id] ?? remaining
       )
-    );
+    ));
 
     for (let i = 0; i < quantity; i++) {
       result.push({
@@ -469,7 +430,17 @@ const getProductStock = (product) => {
 }, [
   selectedProducts,
   productQuantities,
+  printedCounts,
 ]);
+
+const productsForDisplay = useMemo(() => filteredProducts.filter((product) => {
+  const stock = getProductStock(product);
+  const printed = getPrintedCount(product);
+  if (printStatusFilter === "printed") return stock > 0 && printed >= stock;
+  if (printStatusFilter === "partial") return printed > 0 && printed < stock;
+  if (printStatusFilter === "not-printed") return stock > 0 && printed < stock;
+  return true;
+}), [filteredProducts, printStatusFilter, printedCounts]);
 
 
   /* =======================================================
@@ -556,7 +527,7 @@ const getProductStock = (product) => {
 
     return {
       ...previous,
-      [productId]: getProductStock(product),
+      [productId]: getRemainingPrintQuantity(product),
     };
   });
 };
@@ -576,7 +547,7 @@ const getProductStock = (product) => {
   products.forEach((product) => {
     quantities[product.id] =
       productQuantities[product.id] ??
-      getProductStock(product);
+      getRemainingPrintQuantity(product);
   });
 
   setSelectedProductIds(ids);
@@ -659,9 +630,10 @@ const getProductStock = (product) => {
       subFont: 7.5,
       codeFont: 7.5,
 
-      titleTop: 4.0,
-      subTop: 10.0,
-      codeTop: 14.3,
+      titleTop: 3.5,
+      subTop: 8.0,
+      codeTop: 12.0,
+      priceTop: 16.0,
     },
 
 THERMAL_32_5X18: {
@@ -686,7 +658,8 @@ THERMAL_32_5X18: {
   /* TEXT */
   titleTop: 7.1,
   subTop: 11.6,
-  codeTop: 14.8,
+  codeTop: 11.4,
+  priceTop: 14.2,
 },
   };
 
@@ -736,16 +709,16 @@ THERMAL_32_5X18: {
      CREATE PRINT QR
      
      QR PAYLOAD:
-     FIRESTORE PRODUCT ID ONLY
+     PRODUCT CODE ONLY
   ======================================================= */
-const createPrintQR = async (productId) => {
-  if (!productId) {
+const createPrintQR = async (productCode) => {
+  if (!productCode) {
     return "";
   }
 
   try {
     const svg = await QRCode.toString(
-      String(productId),
+      String(productCode),
       {
         type: "svg",
         errorCorrectionLevel: "L",
@@ -831,14 +804,11 @@ const createPrintQR = async (productId) => {
       /*
        * VERY IMPORTANT:
        *
-       * QR VALUE = PRODUCT ID ONLY
+       * QR VALUE = PRODUCT CODE ONLY
        */
-      const productId =
-        String(
-          product?.id || ""
-        ).trim();
-
-      if (!productId) {
+      const productCode = getProductCode(product);
+      if (!productCode) {
+        console.warn("Skipping QR label: productCode is missing.", product?.id);
         return "";
       }
 
@@ -849,28 +819,14 @@ const createPrintQR = async (productId) => {
           ""
         );
 
-      const subcollection =
-        String(
-          selectedSubcollectionName ||
-          ""
-        );
-
-      const productCode =
-        String(
-          product?.productCode ||
-          ""
-        );
-
-      const qr =
-        await createPrintQR(
-          productId
-        );
+      const qr = await createPrintQR(productCode);
+      const productPrice = formatLabelPrice(product);
 
       return `
         <div
           class="print-label"
-          data-product-id="${escapeHtml(
-            productId
+          data-product-code="${escapeHtml(
+            productCode
           )}"
         >
 
@@ -892,26 +848,12 @@ const createPrintQR = async (productId) => {
           </div>
 
 
-          <!-- ============================
-               SUBCOLLECTION
-          ============================= -->
-
-          <div class="print-subcollection">
-            ${escapeHtml(
-              subcollection
-            )}
+          <div class="print-product-code">
+            ${escapeHtml(productCode)}
           </div>
 
-
-          <!-- ============================
-               PRODUCT CODE
-          ============================= -->
-
-          <div class="print-product-code">
-            Code:
-            ${escapeHtml(
-              productCode
-            )}
+          <div class="print-product-price">
+            ${escapeHtml(productPrice)}
           </div>
 
         </div>
@@ -1258,7 +1200,7 @@ const createPrintQR = async (productId) => {
                   ${config.textWidth}mm !important;
 
                 height:
-                  4mm !important;
+                  ${config.height <= 18 ? 7.5 : 10}mm !important;
 
                 margin:
                   0 !important;
@@ -1284,13 +1226,25 @@ const createPrintQR = async (productId) => {
                   1 !important;
 
                 white-space:
-                  nowrap !important;
+                  normal !important;
 
                 overflow:
                   hidden !important;
 
+                overflow-wrap:
+                  anywhere !important;
+
+                display:
+                  -webkit-box !important;
+
+                -webkit-box-orient:
+                  vertical !important;
+
+                -webkit-line-clamp:
+                  2 !important;
+
                 text-overflow:
-                  ellipsis !important;
+                  clip !important;
 
                 transform:
                   none !important;
@@ -1303,7 +1257,7 @@ const createPrintQR = async (productId) => {
               ================================================= */
 
               .print-subcollection {
-
+                display: none !important;
                 position:
                   absolute !important;
 
@@ -1362,7 +1316,7 @@ const createPrintQR = async (productId) => {
               ================================================= */
 
               .print-product-code {
-
+                display: block !important;
                 position:
                   absolute !important;
 
@@ -1420,7 +1374,26 @@ const createPrintQR = async (productId) => {
                  PRINT MEDIA
               ================================================= */
 
-              @media print {
+                             .print-product-price {
+                 position: absolute !important;
+                 left: ${config.textLeft}mm !important;
+                 top: ${config.priceTop}mm !important;
+                 width: ${config.textWidth}mm !important;
+                 height: 4.5mm !important;
+                 margin: 0 !important;
+                 padding: 0 !important;
+                 text-align: left !important;
+                 font-family: Arial, Helvetica, sans-serif !important;
+                 font-size: ${config.codeFont}pt !important;
+                 font-weight: bold !important;
+                 line-height: 1 !important;
+                 white-space: nowrap !important;
+                 overflow: hidden !important;
+                 text-overflow: ellipsis !important;
+                 transform: none !important;
+               }
+
+@media print {
 
                 @page {
 
@@ -1541,25 +1514,32 @@ const createPrintQR = async (productId) => {
       );
 
 
-      printWindow.onafterprint =
-        () => {
-
-          setTimeout(
-            () => {
-
-              try {
-                printWindow.close();
-              } catch (error) {
-                console.error(
-                  error
-                );
-              }
-
-            },
-            300
-          );
-
-        };
+      printWindow.onafterprint = () => {
+        // Browsers fire afterprint even when the user cancels, so confirm before recording labels.
+        const printedSuccessfully = window.confirm("Did the labels print successfully? Select OK to mark these quantities as printed, or Cancel to leave them pending.");
+        if (printedSuccessfully) {
+          const countsToAdd = {};
+          printableProducts.forEach((product) => {
+            const key = getPrintTrackingKey(product);
+            countsToAdd[key] = (countsToAdd[key] || 0) + 1;
+          });
+          setPrintedCounts((previous) => {
+            const next = { ...previous };
+            Object.entries(countsToAdd).forEach(([key, count]) => {
+              const product = products.find((item) => getPrintTrackingKey(item) === key);
+              const stock = product ? getProductStock(product) : Number.MAX_SAFE_INTEGER;
+              next[key] = Math.min(stock, Number(previous[key] || 0) + count);
+            });
+            return next;
+          });
+          setSelectedProductIds([]);
+          setProductQuantities({});
+          setPrintStatusFilter("not-printed");
+        }
+        setTimeout(() => {
+          try { printWindow.close(); } catch (error) { console.error(error); }
+        }, 300);
+      };
     };
 
 
@@ -1603,10 +1583,6 @@ const createPrintQR = async (productId) => {
               e.target.value
             );
 
-            setSelectedSubcollectionId(
-              ""
-            );
-
             setProducts([]);
 
             setSelectedProductIds([]);
@@ -1648,68 +1624,9 @@ const createPrintQR = async (productId) => {
       </div>
 
 
-      {/* =================================================
-          SUBCOLLECTION
-      ================================================= */}
+      {/* Product code search applies to all products in the selected collection. */}
 
-      <div className="form-group">
-
-        <label>
-          Subcollection
-        </label>
-
-        <select
-          value={
-            selectedSubcollectionId
-          }
-          disabled={
-            !selectedCollectionId
-          }
-         onChange={(e) => {
-  setSelectedSubcollectionId(
-    e.target.value
-  );
-
-  setProductCodeSearch("");
-
-  setSelectedProductIds([]);
-
-  setProductQuantities({});
-}}
-        >
-
-          <option value="">
-            Select Subcollection
-          </option>
-
-          {subcollections.map(
-            (subcollection) => (
-
-              <option
-                key={
-                  subcollection.id
-                }
-                value={
-                  subcollection.id
-                }
-              >
-
-                {
-                  subcollection.name ||
-                  subcollection.title ||
-                  subcollection.id
-                }
-
-              </option>
-
-            )
-          )}
-
-        </select>
-
-      </div>
-
-{selectedSubcollectionId && (
+{selectedCollectionId && (
   <div className="form-group">
     <label>
       Search Product Code
@@ -1733,6 +1650,17 @@ const createPrintQR = async (productId) => {
     />
   </div>
 )}
+      <div className="barcode-print-status-filter">
+        <label htmlFor="barcode-print-status">Print status</label>
+        <select id="barcode-print-status" value={printStatusFilter} onChange={(e) => { setPrintStatusFilter(e.target.value); setSelectedProductIds([]); setProductQuantities({}); }}>
+          <option value="not-printed">Not printed</option>
+          <option value="partial">Partially printed</option>
+          <option value="printed">Already printed (full quantity)</option>
+          <option value="all">All products</option>
+        </select>
+        <span>Print history is saved in this browser.</span>
+      </div>
+
       {/* =================================================
           PRODUCTS
       ================================================= */}
@@ -1806,18 +1734,14 @@ const createPrintQR = async (productId) => {
               }}
             >
 
-              {
-                selectedSubcollectionId
-                  ? "No products found."
-                  : "Select a subcollection first."
-              }
+              {isProductsLoading ? "Loading products from all subcollections…" : (selectedCollectionId ? "No products found in this collection." : "Select a collection to load its products.")}
 
             </div>
 
           )}
 
 
-          {filteredProducts.map(
+          {productsForDisplay.map(
             (product) => {
 
               const selected =
@@ -1825,9 +1749,11 @@ const createPrintQR = async (productId) => {
                   product.id
                 );
 
-              const quantity =
-  productQuantities[product.id] ??
-  getProductStock(product);
+              const stockQuantity = getProductStock(product);
+              const printedQuantity = getPrintedCount(product);
+              const remainingQuantity = Math.max(0, stockQuantity - printedQuantity);
+              const quantity = productQuantities[product.id] ?? remainingQuantity;
+              const printStatus = stockQuantity > 0 && printedQuantity >= stockQuantity ? "Already printed" : printedQuantity > 0 ? `Partially printed (${printedQuantity}/${stockQuantity})` : "Not printed";
 
 
               return (
@@ -1900,12 +1826,6 @@ const createPrintQR = async (productId) => {
                     </strong>
 
 
-                    <small>
-                      {
-                        selectedSubcollectionName
-                      }
-                    </small>
-
 
                     <small>
 
@@ -1918,6 +1838,12 @@ const createPrintQR = async (productId) => {
 
                     </small>
 
+                    <small className={`barcode-print-status ${remainingQuantity === 0 ? "is-printed" : printedQuantity > 0 ? "is-partial" : "is-unprinted"}`}>
+                      {printStatus}
+                    </small>
+                    <small className="barcode-remaining-count">
+                      Remaining labels: {remainingQuantity}
+                    </small>
 
                     <small
                       style={{
@@ -1980,14 +1906,10 @@ const createPrintQR = async (productId) => {
 
                           onChange={(e) => {
 
-                            const value =
-                              Math.max(
-                                1,
-                                parseInt(
-                                  e.target.value,
-                                  10
-                                ) || 1
-                              );
+                            const value = Math.min(
+                              remainingQuantity,
+                              Math.max(0, parseInt(e.target.value, 10) || 0)
+                            );
 
                             setProductQuantities(
                               (previous) => ({
@@ -2151,7 +2073,7 @@ const createPrintQR = async (productId) => {
             QR:
           </strong>{" "}
 
-          Firestore Product ID only
+          Product code only
 
           {" • "}
 
@@ -2231,10 +2153,6 @@ const createPrintQR = async (productId) => {
 
               product={
                 product
-              }
-
-              subcollectionName={
-                selectedSubcollectionName
               }
 
               printLayout={

@@ -219,6 +219,7 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   const [isReportsLoading, setIsReportsLoading] = useState(false);
   const [productReports, setProductReports] = useState([]);
   const [sendInvoiceOnWhatsApp, setSendInvoiceOnWhatsApp] = useState(false);
+  const [offlinePaymentMethod, setOfflinePaymentMethod] = useState("Cash");
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const SHIPPING_CHARGE = 199;
 const [isShippingApplied, setIsShippingApplied] = useState(false);
@@ -345,6 +346,7 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
   const [isGSTApplied, setIsGSTApplied] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
+  const [isCartPreviewReceipt, setIsCartPreviewReceipt] = useState(false);
 
   // Add this line with your other useState calls at the top of the component:
   const [offlineSelections, setOfflineSelections] = useState({});
@@ -705,7 +707,7 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
     });
   };
   useEffect(() => {
-    if (showInvoice && invoiceData) {
+    if (showInvoice && invoiceData && !isCartPreviewReceipt) {
       // Small delay ensures DOM + styles are fully rendered
       const timer = setTimeout(() => {
         window.print();
@@ -713,7 +715,7 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
 
       return () => clearTimeout(timer);
     }
-  }, [showInvoice, invoiceData]);
+  }, [showInvoice, invoiceData, isCartPreviewReceipt]);
 
   // --- Utility Functions ---
   const handleImageChange = (e, setImageFile) => {
@@ -1323,23 +1325,38 @@ useEffect(() => {
   const generateInvoicePDFBlob = async () => {
     const element = document.getElementById("invoice-pdf");
     if (!element) return null;
-
     const canvas = await html2canvas(element, {
-      scale: 2,
+      scale: 3,
       backgroundColor: "#ffffff",
       useCORS: true,
+      windowWidth: element.scrollWidth,
     });
-
-    const imgData = canvas.toDataURL("image/jpeg", 1.0);
-
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = 210;
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
-
+    const imgData = canvas.toDataURL("image/png");
+    const pdfWidth = 80;
+    const pdfHeight = Math.max(80, (canvas.height * pdfWidth) / canvas.width);
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [pdfWidth, pdfHeight], compress: true });
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST");
     return pdf.output("blob");
   };
+
+  const downloadInvoicePDF = async () => {
+    try {
+      const blob = await generateInvoicePDFBlob();
+      if (!blob) throw new Error("Receipt is not ready yet.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Receipt-${invoiceData?.invoiceNumber || "offline-sale"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (error) {
+      console.error("Receipt PDF download failed:", error);
+      alert("Could not download the receipt PDF. Please try again.");
+    }
+  };
+
   const uploadInvoicePDF = async (orderId) => {
     const pdfBlob = await generateInvoicePDFBlob();
     if (!pdfBlob) return null;
@@ -3722,6 +3739,7 @@ Requested: ${quantitySold}
           gstAddedToTotal: addedGstValue,
           totalAmount: totalAmountToUse,
           shippingFee: shippingValue,
+          paymentMethod: offlinePaymentMethod,
           pricingKey: offlinePricingKey,
           role: ROLE_KEYS.find(
             r => ROLE_CONFIG[r].pricingKey === offlinePricingKey
@@ -3746,6 +3764,7 @@ Requested: ${quantitySold}
           gstAmount: gstValue,
           gstAddedToTotal: addedGstValue,
           includedGstAmount: offlineGstSummary.includedTax,
+          paymentMethod: offlinePaymentMethod,
           total: totalAmountToUse,
           invoiceDate: new Date(),
           invoiceNumber: orderRef.id,
@@ -3765,6 +3784,7 @@ localStorage.removeItem("offlineCartDraft");
 // Optional: if you later saved full billing draft
 localStorage.removeItem("offlineBillingDraft");
         setEditedTotal('');
+        setOfflinePaymentMethod('Cash');
         setSelectedOfflineCollectionId('');
         setSelectedOfflineSubcollectionId('');
         setOfflineProducts([]);
@@ -3815,6 +3835,63 @@ alert(
     }
   };
 
+  // Build a receipt from the CURRENT cart only. This does not create an order or update stock.
+  const handlePrintCurrentCart = () => {
+    const currentItems = Object.values(pricedOfflineCart || {});
+    if (!currentItems.length) {
+      alert("Your cart is empty. Add products before printing.");
+      return;
+    }
+
+    const cartItems = currentItems.map((item) => {
+      const unitPrice = typeof item.calculatedPrice === "number"
+        ? item.calculatedPrice
+        : Number(item.price) || 0;
+      const lineSubtotal = unitPrice * (Number(item.quantity) || 0);
+      const gst = getProductGstDetails(item, lineSubtotal);
+      return {
+        productId: item.productDocumentId || String(item.id).split("_")[0] || "N/A",
+        productName: item.productName || item.name || "Item",
+        productCode: item.productCode || "N/A",
+        quantity: Number(item.quantity) || 0,
+        price: unitPrice,
+        gstRate: gst.rate,
+        gstType: gst.type,
+        gstAmount: gst.tax,
+        variation: item.variation || null,
+      };
+    });
+
+    const customerInfo = {
+      fullName: offlineCustomer.fullName || "Walk-in Customer",
+      email: offlineCustomer.email || "",
+      phoneNumber: offlineCustomer.phoneNumber || "",
+      addressLine1: offlineCustomer.addressLine1 || "",
+      addressLine2: offlineCustomer.addressLine2 || "",
+      city: offlineCustomer.city || "",
+      state: offlineCustomer.state || "",
+      pincode: offlineCustomer.pincode || "",
+      gst: offlineCustomer.gst || "",
+    };
+
+    setIsCartPreviewReceipt(true);
+    setInvoiceData({
+      customer: customerInfo,
+      items: cartItems,
+      subtotal: baseTotal,
+      gstRate: null,
+      shippingFee: shippingValue,
+      gstAmount: gstAmount,
+      gstAddedToTotal: offlineGstSummary.addedTax,
+      includedGstAmount: offlineGstSummary.includedTax,
+      paymentMethod: offlinePaymentMethod,
+      total: finalTotal,
+      invoiceDate: new Date(),
+      invoiceNumber: "CURRENT-CART",
+    });
+    setShowInvoice(true);
+  };
+
   const handleClearOfflineCart = () => {
 
   if (!window.confirm("Clear entire offline cart?")) {
@@ -3834,7 +3911,7 @@ alert(
   alert("Offline cart cleared.");
 };
   useEffect(() => {
-    if (!showInvoice || !invoiceData) return;
+    if (!showInvoice || !invoiceData || isCartPreviewReceipt) return;
 
     const processInvoicePDF = async () => {
       try {
@@ -3865,10 +3942,10 @@ alert(
 
     processInvoicePDF();
 
-  }, [showInvoice, invoiceData]);
+  }, [showInvoice, invoiceData, isCartPreviewReceipt]);
 
   useEffect(() => {
-    const afterPrint = () => setShowInvoice(false);
+    const afterPrint = () => { setShowInvoice(false); setIsCartPreviewReceipt(false); };
 
     window.addEventListener('afterprint', afterPrint);
     return () => window.removeEventListener('afterprint', afterPrint);
@@ -5919,6 +5996,18 @@ alert(
                         />
                       </div>
 
+                      <div className="offline-pos-payment-field">
+                        <label htmlFor="offline-payment-method">Payment method</label>
+                        <select id="offline-payment-method" value={offlinePaymentMethod} onChange={(e) => setOfflinePaymentMethod(e.target.value)}>
+                          <option value="Cash">Cash</option>
+                          <option value="UPI">UPI</option>
+                          <option value="Card">Debit / Credit Card</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="Credit">Credit / Pay Later</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
                       <label className="offline-pos-whatsapp-option">
                         <input
                           type="checkbox"
@@ -5934,10 +6023,11 @@ alert(
                         Finalize Sale
                       </button>
                       <button
+                        type="button"
                         className="offline-pos-secondary-btn"
-                        onClick={() => setShowInvoice(true)}
+                        onClick={handlePrintCurrentCart}
                       >
-                        🖨 Reprint Invoice
+                        🖨 Print Current Cart / Save as PDF
                       </button>
                       <button
   type="button"
@@ -5972,6 +6062,11 @@ alert(
       </div>
       {showInvoice && invoiceData && (
         <div className="offline-pos-invoice-print">
+          <div className="offline-pos-invoice-actions">
+            <button type="button" onClick={() => window.print()}>Print current cart</button>
+            <button type="button" onClick={downloadInvoicePDF}>Download receipt PDF</button>
+            <button type="button" onClick={() => { setShowInvoice(false); setIsCartPreviewReceipt(false); }}>Close</button>
+          </div>
           <div id="invoice-pdf" className="offline-pos-invoice">
 
             {/* ================= HEADER (CENTER) ================= */}
@@ -5992,35 +6087,26 @@ alert(
               {invoiceData.customer.email && <p><strong>Email :</strong> {invoiceData.customer.email}</p>}
               <p><strong>Address :</strong> {[invoiceData.customer.addressLine1, invoiceData.customer.addressLine2, invoiceData.customer.city, invoiceData.customer.state, invoiceData.customer.pincode].filter(Boolean).join(', ') || '—'}</p>
               <p><strong>GSTN No :</strong> {invoiceData.customer.gst || 'N/A'}</p>
+              <p><strong>Payment :</strong> {invoiceData.paymentMethod || 'N/A'}</p>
             </div>
 
-            {/* ================= ITEM TABLE (BELOW) ================= */}
+            {/* Compact thermal-receipt item list */}
             <table className="offline-pos-invoice-table">
-              <thead>
-                <tr>
-                  <th>Sr</th>
-                  <th>Item Name</th>
-                  <th>Product Code</th>
-                  <th>Qty</th>
-                  <th>Rate</th>
-                  <th>GST Rate</th>
-                  <th>GST Amount</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Item / GST</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
               <tbody>
                 {invoiceData.items.map((item, index) => {
                   const lineTotal = Number(item.price || 0) * Number(item.quantity || 0);
                   return (
-                    <tr key={index}>
-                      <td>{index + 1}</td>
-                      <td>{item.productName}</td>
-                      <td>{item.productCode || '—'}</td>
-                      <td>{item.quantity}</td>
-                      <td>{Number(item.price || 0).toFixed(2)}</td>
-                      <td>{Number(item.gstRate || 0)}% ({item.gstType || 'exclusive'})</td>
-                      <td>{Number(item.gstAmount || 0).toFixed(2)}</td>
-                      <td>{lineTotal.toFixed(2)}</td>
+                    <tr key={item.productId || `${item.productCode || index}-${index}`}>
+                      <td>
+                        <strong>{item.productName || "Item"}</strong>
+                        <small className="offline-pos-receipt-item-meta">Code: {item.productCode || "—"}</small>
+                        <small className="offline-pos-receipt-item-meta">GST {Number(item.gstRate || 0)}% · {item.gstType || "exclusive"}: ₹{Number(item.gstAmount || 0).toFixed(2)}</small>
+                        {item.variation?.size && <small className="offline-pos-receipt-item-meta">Variant: {item.variation.size}</small>}
+                      </td>
+                      <td>{Number(item.quantity || 0)}</td>
+                      <td>₹{Number(item.price || 0).toFixed(2)}</td>
+                      <td>₹{lineTotal.toFixed(2)}</td>
                     </tr>
                   );
                 })}
@@ -6061,6 +6147,8 @@ alert(
             <p className="offline-pos-invoice-words">
               {convertNumberToWords(invoiceData.total)} Only
             </p>
+
+            <div className="offline-pos-receipt-thanks">Thank you for shopping with us!<br />Please visit again.</div>
 
             {/* ================= FOOTER ================= */}
             <div className="offline-pos-invoice-footer">

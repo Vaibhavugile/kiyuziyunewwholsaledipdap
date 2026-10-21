@@ -181,3 +181,114 @@
 .offline-pos-root .offline-pos-card-qty-value { text-align:center; color:#17212b; font-size:14px; font-weight:900; }
 .offline-pos-root .offline-pos-product-actions { pointer-events:auto; }
 .offline-pos-root .offline-pos-product-actions button { pointer-events:auto; }
+
+/* DMart-inspired compact POS receipt and payment capture */
+.offline-pos-root .offline-pos-payment-field { display:flex; flex-direction:column; gap:7px; margin:12px 0; padding:12px; border:1px solid #e2e7ec; border-radius:12px; background:#fff; }
+.offline-pos-root .offline-pos-payment-field label { color:#253342; font-size:12px; font-weight:850; }
+.offline-pos-root .offline-pos-payment-field select { width:100%; min-height:42px; padding:9px 11px; border:1px solid #ccd5dd; border-radius:9px; background:#fff; color:#17212b; font-size:13px; }
+.offline-pos-invoice-actions { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; max-width:360px; margin:12px auto; }
+.offline-pos-invoice-actions button { border:1px solid #d8dee5; border-radius:8px; padding:10px 13px; background:#fff; color:#17212b; font-weight:800; cursor:pointer; }
+.offline-pos-invoice-actions button:first-child { background:#c91f32; border-color:#c91f32; color:#fff; }
+.offline-pos-invoice-actions button:nth-child(2) { background:#176b43; border-color:#176b43; color:#fff; }
+.offline-pos-invoice { width:300px; max-width:300px; box-sizing:border-box; padding:12px; border:1px solid #e5e7eb; box-shadow:0 8px 28px #17212b18; font-family:Arial,Helvetica,sans-serif; font-size:10px; }
+.offline-pos-invoice-header { padding-bottom:9px; border-bottom:1px dashed #555; }
+.offline-pos-invoice-header h2 { color:#111; font-size:15px; letter-spacing:0; line-height:1.2; }
+.offline-pos-invoice-header p { color:#222; font-size:9px; }
+.offline-pos-invoice-top { display:block; margin:10px 0; padding:0 0 8px; border-radius:0; border-bottom:1px dashed #777; background:#fff; font-size:9px; }
+.offline-pos-invoice-top p { margin:3px 0; overflow-wrap:anywhere; }
+.offline-pos-invoice-table { table-layout:fixed; margin:8px 0; font-size:9px; }
+.offline-pos-invoice-table th,.offline-pos-invoice-table td { padding:5px 3px; border:0; border-bottom:1px dashed #aaa; overflow-wrap:anywhere; }
+.offline-pos-invoice-table th { background:#fff; color:#111; border-top:1px dashed #777; border-bottom:1px dashed #777; }
+.offline-pos-invoice-table th:first-child,.offline-pos-invoice-table td:first-child { width:48%; }
+.offline-pos-invoice-table th:nth-child(2),.offline-pos-invoice-table td:nth-child(2) { width:10%; text-align:center; }
+.offline-pos-invoice-table th:nth-child(3),.offline-pos-invoice-table td:nth-child(3) { width:20%; text-align:right; }
+.offline-pos-invoice-table th:nth-child(4),.offline-pos-invoice-table td:nth-child(4) { width:22%; text-align:right; }
+.offline-pos-receipt-item-meta { display:block; margin-top:2px; color:#555; font-size:8px; font-weight:400; }
+.offline-pos-invoice-summary { width:100%; margin:8px 0 0; font-size:10px; }
+.offline-pos-invoice-summary > div { gap:8px; padding:5px 0; border-bottom:1px dashed #bbb; }
+.offline-pos-invoice-summary .offline-pos-invoice-net-total { color:#111; font-size:14px; border-top:1px dashed #111; }
+.offline-pos-invoice-words { margin:9px 0; font-size:9px; }
+.offline-pos-receipt-thanks { margin:14px 0 5px; padding:10px 0; border-top:1px dashed #555; border-bottom:1px dashed #555; text-align:center; font-size:10px; font-weight:800; }
+.offline-pos-invoice-footer { display:block; margin-top:8px; padding-top:8px; border-top:0; font-size:8px; }
+.offline-pos-invoice-signature { display:none; }
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+  html, body { width:80mm !important; min-width:0 !important; margin:0 !important; padding:0 !important; background:#fff !important; }
+  body * { visibility:hidden !important; }
+  .offline-pos-invoice-print,.offline-pos-invoice-print * { visibility:visible !important; }
+  .offline-pos-invoice-actions { display:none !important; }
+  .offline-pos-invoice-print { position:absolute !important; left:0 !important; top:0 !important; width:80mm !important; margin:0 !important; padding:0 !important; background:#fff !important; }
+  .offline-pos-invoice { width:80mm !important; max-width:80mm !important; margin:0 !important; padding:3mm !important; border:0 !important; box-shadow:none !important; font-size:9px !important; }
+  .offline-pos-invoice-header h2 { font-size:14px !important; }
+  .offline-pos-invoice-table { width:100% !important; font-size:8px !important; }
+  .offline-pos-invoice-table th,.offline-pos-invoice-table td { padding:4px 2px !important; }
+  .offline-pos-invoice-top { display:block !important; }
+  .offline-pos-invoice-footer { page-break-inside:avoid; }
+}
+
+/* Receipt actions stay visible in the offline cart before sale finalization. */
+.offline-pos-cart-receipt-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.offline-pos-cart-receipt-actions .offline-pos-secondary-btn {
+  width: 100%;
+  min-height: 44px;
+  white-space: normal;
+}
+@media (max-width: 520px) {
+  .offline-pos-cart-receipt-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Current-cart receipt preview: modal overlay above the entire storefront */
+.offline-pos-invoice-print {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  overflow-y: auto !important;
+  padding: 22px 16px 32px !important;
+  box-sizing: border-box !important;
+  background: rgba(12, 18, 28, 0.68) !important;
+  backdrop-filter: blur(5px);
+}
+.offline-pos-invoice-print .offline-pos-invoice-actions {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  flex: 0 0 auto !important;
+  width: min(100%, 420px) !important;
+  max-width: 420px !important;
+  margin: 0 auto 2px !important;
+  padding: 10px !important;
+  border: 1px solid #e6e8ec !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.2) !important;
+}
+.offline-pos-invoice-print .offline-pos-invoice {
+  flex: 0 0 auto !important;
+  margin: 0 auto !important;
+  background: #fff !important;
+  border-radius: 2px !important;
+}
+@media print {
+  .offline-pos-invoice-print {
+    position: absolute !important;
+    inset: auto !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+    backdrop-filter: none !important;
+  }
+}
