@@ -30,6 +30,7 @@ import './AdminPage.css';
 import './OfflineBillingGST.css';
 import './QuickAddProduct.css';
 import './AdminProductEditLayout.css';
+import './DeoDapProductEditor.css';
 import './SaasUsers.css';
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
@@ -86,6 +87,32 @@ const parseProductImportCsv = (text) => {
     item[header] = cells[index] ?? '';
     return item;
   }, {}));
+};
+
+// Keep product codes as strings so codes such as "0510" retain leading zeroes.
+// DeoDap SKUs commonly follow the importer convention: CODE_product_name.
+const normalizeProductCode = (value) => String(value ?? '').trim().toLowerCase();
+
+const getDeoDapCodeFromSku = (value) => {
+  const sku = String(value ?? '').trim();
+  if (!sku) return '';
+  const match = sku.match(/^([^_\s-]+)[_-]/);
+  return match ? match[1].trim() : '';
+};
+
+const getDeoDapRecordCode = (record) => {
+  const skuCandidates = [
+    record?.sku,
+    record?.inventoryRow?.sku,
+    ...(Array.isArray(record?.variants) ? record.variants.map(variant => variant?.sku) : []),
+    ...(Array.isArray(record?.variant_details) ? record.variant_details.map(variant => variant?.sku) : []),
+  ];
+  for (const sku of skuCandidates) {
+    const code = getDeoDapCodeFromSku(sku);
+    if (code) return code;
+  }
+  const inventoryName = String(record?.inventoryRow?.inventoryName ?? record?.inventory_name ?? '').trim();
+  return getDeoDapCodeFromSku(inventoryName);
 };
 
 const AdminPage = () => {
@@ -151,6 +178,25 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   const [editProductRetailPrice, setEditProductRetailPrice] = useState('');
   const [editProductGstRate, setEditProductGstRate] = useState('0');
   const [editProductGstType, setEditProductGstType] = useState('exclusive');
+  // DeoDap catalog fields are additive: legacy inventory/pricing fields remain intact.
+  const [deodapRawJson, setDeodapRawJson] = useState('');
+  const [deodapRawData, setDeodapRawData] = useState({});
+  const [deodapScrapedCatalog, setDeodapScrapedCatalog] = useState([]);
+  const [deodapFolderName, setDeodapFolderName] = useState('');
+  const [deodapMatchSearch, setDeodapMatchSearch] = useState({});
+  const [deodapSelectedMatch, setDeodapSelectedMatch] = useState({});
+  const [deodapFolderLoading, setDeodapFolderLoading] = useState(false);
+  const [deodapConnectingId, setDeodapConnectingId] = useState(null);
+  const [deodapBulkConnecting, setDeodapBulkConnecting] = useState(false);
+  const [deodapConnectionStatus, setDeodapConnectionStatus] = useState({});
+  const [deodapConnectionReport, setDeodapConnectionReport] = useState(null);
+  const [deodapFields, setDeodapFields] = useState({
+    sku: '', tags: '', compareAtPrice: '', discountPercentage: '', vendor: '',
+    productType: '', descriptionHtml: '', descriptionText: '', keyFeatures: '', faqs: '[]',
+    source: 'deodap.in', productUrl: '', handle: '', available: true, origin: '', currency: 'INR', scrapedAt: '', sourceImageUrls: '',
+  });
+  const updateDeodapField = (field, value) => setDeodapFields(prev => ({ ...prev, [field]: value }));
+
   const [productName, setProductName] = useState(''); // New state for product name
   const [productCode, setProductCode] = useState('');
   const [productQuantity, setProductQuantity] = useState('');
@@ -2261,12 +2307,285 @@ for (const product of newProducts) {
     }
   };
 
+  const handleDeoDapFolderUpload = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    setDeodapFolderLoading(true);
+    try {
+      const jsonFiles = files.filter(file => /(^|\/)product\.json$/i.test(file.webkitRelativePath || file.name) || /\.json$/i.test(file.name));
+      const parsedProducts = [];
+      const errors = [];
+      for (const file of jsonFiles) {
+        try {
+          const parsed = JSON.parse(await file.text());
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+          const title = String(parsed.title ?? parsed.matched_title ?? parsed.productName ?? parsed.inventory_name ?? '').trim();
+          if (!title) continue;
+          parsedProducts.push({
+            ...parsed,
+            __catalogKey: `${file.webkitRelativePath || file.name}:${parsed.inventory_code || parsed.handle || title}`,
+            __fileName: file.webkitRelativePath || file.name,
+            __title: title,
+            __sku: String(parsed.sku ?? parsed.inventoryRow?.sku ?? parsed.variants?.[0]?.sku ?? parsed.variant_details?.[0]?.sku ?? '').trim(),
+            // Prefer the top-level scraped selling price, then fall back to the first variant.
+            // This prevents an empty top-level field from leaving old product pricing unchanged.
+            __price: parsed.price ?? parsed.salePrice ?? parsed.sellingPrice ?? parsed.retailPrice
+              ?? parsed.variants?.[0]?.price ?? parsed.variant_details?.[0]?.price ?? '',
+            __compareAt: parsed.compareAtPrice ?? parsed.compare_at_price ?? parsed.compare_at_price_max
+              ?? parsed.variants?.[0]?.compareAtPrice ?? parsed.variants?.[0]?.compare_at_price
+              ?? parsed.variant_details?.[0]?.compareAtPrice ?? parsed.variant_details?.[0]?.compare_at_price ?? '',
+            __discount: parsed.discountPercentage ?? parsed.discount_percentage
+              ?? parsed.variants?.[0]?.discountPercentage ?? parsed.variant_details?.[0]?.discountPercentage ?? '',
+            __tags: Array.isArray(parsed.tags) ? parsed.tags : String(parsed.tags || '').split(',').map(v => v.trim()).filter(Boolean),
+            __descriptionHtml: parsed.descriptionHtml ?? parsed.description_html ?? '',
+            __descriptionText: parsed.descriptionText ?? parsed.description_text ?? '',
+            __keyFeatures: parsed.keyFeatures ?? parsed.key_features ?? [],
+            __faqs: parsed.faqs ?? parsed.faq ?? [],
+            __variants: parsed.variants ?? parsed.variant_details ?? [],
+          });
+        } catch (error) {
+          errors.push(file.webkitRelativePath || file.name);
+        }
+      }
+      const unique = Array.from(new Map(parsedProducts.map(item => [item.__catalogKey, item])).values());
+      setDeodapScrapedCatalog(unique);
+      setDeodapFolderName(files[0]?.webkitRelativePath?.split('/')[0] || 'Selected folder');
+      setDeodapSelectedMatch({});
+      setDeodapMatchSearch({});
+      setDeodapConnectionStatus({});
+      setDeodapConnectionReport(null);
+      const autoMatched = allCollectionProducts.filter(product => { const code = normalizeProductCode(product.productCode); return code && unique.filter(item => normalizeProductCode(getDeoDapRecordCode(item)) === code).length === 1; }).length;
+      alert(`Loaded ${unique.length} scraped product record(s). Automatically identified ${autoMatched} unique product-code match(es). Review each match and click Connect & update to apply it.${errors.length ? ` ${errors.length} JSON file(s) could not be read.` : ''}`);
+    } catch (error) {
+      console.error('DeoDap folder import failed:', error);
+      alert('Could not read the selected output folder. Please select the scraper output folder again.');
+    } finally {
+      setDeodapFolderLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleConnectDeoDapRecord = async (product, scraped, options = {}) => {
+    if (!product || !scraped) return false;
+    const mainId = selectedMainCollectionId;
+    const subId = product.subcollectionId || selectedSubcollectionId;
+    if (!mainId || !subId || !product.id) {
+      if (!options.silent) alert('Please select a collection and a valid existing product row first.');
+      return false;
+    }
+    const recordId = `${product.destination || 'products'}:${product.id}`;
+    if (!options.skipConfirm && !window.confirm(`Connect scraper data to existing product "${product.productName || product.productCode || product.id}"?\n\nProduct code and image fields will not be changed. Selling price and all tiered pricing roles will be updated.`)) return false;
+    setDeodapConnectingId(recordId);
+    setDeodapConnectionStatus(prev => ({ ...prev, [recordId]: { state: 'connecting', title: scraped.__title || product.productName || product.productCode || product.id } }));
+    try {
+      // Normalize price values from either the parsed product record or its first variant.
+      const rawSourcePrice = scraped.__price ?? scraped.price ?? scraped.salePrice ?? scraped.sellingPrice
+        ?? scraped.retailPrice ?? scraped.variants?.[0]?.price ?? scraped.variant_details?.[0]?.price;
+      const sourcePrice = rawSourcePrice === '' || rawSourcePrice === null || rawSourcePrice === undefined
+        ? NaN
+        : Number(String(rawSourcePrice).replace(/[₹,\\s]/g, ''));
+      const rawCompareAt = scraped.__compareAt ?? scraped.compareAtPrice ?? scraped.compare_at_price
+        ?? scraped.variants?.[0]?.compareAtPrice ?? scraped.variants?.[0]?.compare_at_price;
+      const compareAt = rawCompareAt === '' || rawCompareAt === null || rawCompareAt === undefined
+        ? 0
+        : (Number(String(rawCompareAt).replace(/[₹,\\s]/g, '')) || 0);
+      const validPrice = Number.isFinite(sourcePrice) && sourcePrice >= 0;
+      const discount = scraped.__discount !== '' && scraped.__discount != null
+        ? Number(scraped.__discount) || 0
+        : (compareAt > 0 && validPrice ? Math.max(0, ((compareAt - sourcePrice) / compareAt) * 100) : 0);
+      const keyFeatures = Array.isArray(scraped.__keyFeatures) ? scraped.__keyFeatures : String(scraped.__keyFeatures || '').split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+      const faqs = Array.isArray(scraped.__faqs) ? scraped.__faqs : [];
+      const tags = Array.isArray(scraped.__tags) ? scraped.__tags : [];
+      const subRef = doc(db, 'collections', mainId, 'subcollections', subId);
+      const productRef = doc(db, 'collections', mainId, 'subcollections', subId, product.destination || 'products', product.id);
+      const subSnap = await getDoc(subRef);
+      const subData = subSnap.exists() ? subSnap.data() : {};
+      const oldPricing = subData.tieredPricing || product.tieredPricing || {};
+      // Preserve any additional pricing roles, then update every configured role and every tier.
+      const tieredPricing = { ...oldPricing };
+      PRICING_KEYS.forEach((key) => {
+        const existing = Array.isArray(oldPricing[key]) ? oldPricing[key] : [];
+        tieredPricing[key] = existing.length
+          ? existing.map((tier) => ({ ...tier, price: validPrice ? sourcePrice : (Number(tier.price) || 0) }))
+          : [{ min_quantity: 1, max_quantity: 999999, price: validPrice ? sourcePrice : 0 }];
+      });
+      const scrapedData = {
+        productName: scraped.__title,
+        // Write every common selling-price alias so old fields cannot override the imported price in UI/cart code.
+        ...(validPrice ? {
+          sellingPrice: sourcePrice,
+          retailPrice: sourcePrice,
+          salePrice: sourcePrice,
+          price: sourcePrice,
+        } : {}),
+        compareAtPrice: compareAt,
+        discountPercentage: discount,
+        ...(scraped.__sku ? { sku: scraped.__sku } : {}),
+        tags,
+        vendor: String(scraped.vendor || ''),
+        productType: String(scraped.productType ?? scraped.product_type ?? ''),
+        descriptionHtml: String(scraped.__descriptionHtml || ''),
+        descriptionText: String(scraped.__descriptionText || ''),
+        keyFeatures,
+        faqs,
+        source: String(scraped.source || 'deodap.in'),
+        productUrl: String(scraped.productUrl ?? scraped.product_url ?? ''),
+        handle: String(scraped.handle || ''),
+        available: scraped.available !== false,
+        currency: String(scraped.currency || 'INR'),
+        origin: String(scraped.origin || ''),
+        scrapedAt: String(scraped.scrapedAt ?? scraped.scraped_at ?? ''),
+        scrapedVariants: Array.isArray(scraped.__variants) ? scraped.__variants : [],
+        // Intentionally omit productCode and all image/image-URL fields from this import.
+        tieredPricing,
+        updatedAt: serverTimestamp(),
+      };
+      const batch = writeBatch(db);
+      batch.update(productRef, scrapedData);
+      batch.set(subRef, {
+        tieredPricing,
+        // Keep the parent subcollection's direct price aliases in sync with its tiered pricing.
+        ...(validPrice ? {
+          sellingPrice: sourcePrice,
+          retailPrice: sourcePrice,
+          salePrice: sourcePrice,
+          price: sourcePrice,
+        } : {}),
+        deodapProductDetails: {
+          [product.id]: {
+            productId: product.id,
+            productName: scraped.__title,
+            productCode: product.productCode || '',
+            ...scrapedData,
+            sourceProductTitle: scraped.__title,
+            sourceFile: scraped.__fileName,
+            updatedAt: serverTimestamp(),
+          },
+        },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await batch.commit();
+      setDeodapSelectedMatch(prev => ({ ...prev, [recordId]: '' }));
+      setDeodapConnectionStatus(prev => ({ ...prev, [recordId]: { state: 'connected', title: scraped.__title || product.productName || product.productCode || product.id, productCode: product.productCode || '', sku: scraped.__sku || '' } }));
+      if (!options.skipRefresh) {
+        await fetchProducts();
+        await fetchAllCollectionProducts(mainId);
+      }
+      if (!options.silent) alert(`Connected "${scraped.__title}" to the existing product. Product code and image fields were preserved; selling price and all tiered pricing roles were updated.`);
+      return true;
+    } catch (error) {
+      console.error('Failed to connect DeoDap product:', error);
+      setDeodapConnectionStatus(prev => ({ ...prev, [recordId]: { state: 'failed', title: scraped.__title || product.productName || product.productCode || product.id, productCode: product.productCode || '', sku: scraped.__sku || '', error: error.message || 'Unknown Firestore error' } }));
+      if (!options.silent) alert(`Could not connect this product: ${error.message || 'Unknown Firestore error'}`);
+      return false;
+    } finally {
+      setDeodapConnectingId(null);
+    }
+  };
+
+  const handleConnectAllDeoDapMatches = async () => {
+    if (deodapBulkConnecting || !deodapScrapedCatalog.length) return;
+    const candidates = [];
+    const unmatched = [];
+    const ambiguous = [];
+    const usedCatalogKeys = new Set();
+
+    for (const product of allCollectionProducts) {
+      const rowKey = `${product.destination || 'products'}:${product.id}`;
+      const chosenKey = deodapSelectedMatch[rowKey] || '';
+      const chosen = deodapScrapedCatalog.find(item => item.__catalogKey === chosenKey);
+      const code = normalizeProductCode(product.productCode);
+      const codeMatches = code ? deodapScrapedCatalog.filter(item => normalizeProductCode(getDeoDapRecordCode(item)) === code) : [];
+      const record = chosen || (codeMatches.length === 1 ? codeMatches[0] : null);
+
+      if (!record) {
+        if (codeMatches.length > 1) ambiguous.push({ product, count: codeMatches.length });
+        else unmatched.push(product);
+        continue;
+      }
+      if (usedCatalogKeys.has(record.__catalogKey)) {
+        ambiguous.push({ product, count: 0, reason: 'This scraper record is already assigned to another product.' });
+        continue;
+      }
+      usedCatalogKeys.add(record.__catalogKey);
+      candidates.push({ product, record });
+    }
+
+    if (!candidates.length) {
+      setDeodapConnectionReport({ connected: [], failed: [], unmatched, ambiguous, message: 'No unique matches were ready to connect. Manually select a scraper record in the product row for unmatched products.' });
+      return;
+    }
+
+    if (!window.confirm(`Connect and update ${candidates.length} matched product(s) now?\n\n${unmatched.length} unmatched and ${ambiguous.length} ambiguous products will be skipped.\nProduct codes and image fields will be preserved.`)) return;
+
+    setDeodapBulkConnecting(true);
+    const connected = [];
+    const failed = [];
+    for (const { product, record } of candidates) {
+      const key = `${product.destination || 'products'}:${product.id}`;
+      const ok = await handleConnectDeoDapRecord(product, record, { skipConfirm: true, skipRefresh: true, silent: true });
+      const details = { key, title: record.__title || product.productName || product.productCode || product.id, productCode: product.productCode || '', sku: record.__sku || '' };
+      if (ok) connected.push(details);
+      else {
+        const state = (deodapConnectionStatus[key] || {});
+        failed.push({ ...details, error: state.error || 'Firestore write failed; check the browser console for details.' });
+      }
+    }
+
+    try {
+      await fetchProducts();
+      await fetchAllCollectionProducts(selectedMainCollectionId);
+    } catch (refreshError) {
+      console.error('Could not refresh product list after bulk DeoDap sync:', refreshError);
+    }
+    setDeodapConnectionReport({ connected, failed, unmatched, ambiguous });
+    setDeodapBulkConnecting(false);
+  };
+
+  const loadDeoDapScrapedJson = () => {
+    try {
+      const parsed = JSON.parse(deodapRawJson);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Paste one product JSON object.');
+      }
+      setDeodapRawData(parsed);
+      setProductName(String(parsed.title ?? parsed.productName ?? productName));
+      // Keep the existing inventory product code unchanged; scraped SKU is stored separately.
+      if (parsed.price !== undefined) setEditProductRetailPrice(String(parsed.price));
+      setDeodapFields({
+        sku: String(parsed.sku ?? parsed.inventoryRow?.sku ?? parsed.productCode ?? ''),
+        tags: Array.isArray(parsed.tags) ? parsed.tags.join(', ') : String(parsed.tags || ''),
+        compareAtPrice: String(parsed.compareAtPrice ?? ''),
+        discountPercentage: String(parsed.discountPercentage ?? ''),
+        vendor: String(parsed.vendor ?? ''),
+        productType: String(parsed.productType ?? ''),
+        descriptionHtml: String(parsed.descriptionHtml ?? ''),
+        descriptionText: String(parsed.descriptionText ?? ''),
+        keyFeatures: Array.isArray(parsed.keyFeatures) ? parsed.keyFeatures.join('\\n') : String(parsed.keyFeatures || ''),
+        faqs: JSON.stringify(Array.isArray(parsed.faqs) ? parsed.faqs : [], null, 2),
+        source: String(parsed.source ?? 'deodap.in'),
+        productUrl: String(parsed.productUrl ?? ''),
+        handle: String(parsed.handle ?? ''),
+        available: parsed.available !== false,
+        origin: String(parsed.origin ?? ''),
+        currency: String(parsed.currency ?? 'INR'),
+        scrapedAt: String(parsed.scrapedAt ?? ''),
+        sourceImageUrls: '',
+      });
+      alert('Scraped JSON loaded. Review the fields, then click Update Product to save.');
+    } catch (error) {
+      alert(error.message === 'Paste one product JSON object.' ? error.message : 'Invalid JSON. Paste one complete product JSON object from the scraper.');
+    }
+  };
+
   const startEditProduct = (product) => {
     const owningSubcollectionId = product.subcollectionId || selectedSubcollectionId;
     const owningSubcollectionData = product.subcollectionData || selectedSubcollectionData;
     if (owningSubcollectionId) setSelectedSubcollectionId(owningSubcollectionId);
     if (owningSubcollectionData) setSelectedSubcollectionData(owningSubcollectionData);
     setEditingProduct({ ...product, subcollectionId: owningSubcollectionId, subcollectionData: owningSubcollectionData });
+    setDeodapRawData(product.deodapRawData && typeof product.deodapRawData === 'object' ? product.deodapRawData : {});
+    setDeodapRawJson('');
     setProductName(product.productName || "");
     setProductCode(product.productCode || "");
 
@@ -2303,6 +2622,22 @@ for (const product of newProducts) {
     setEditProductRetailPrice(String(product.retailPrice ?? product.salePrice ?? product.price ?? owningSubcollectionData?.retailPrice ?? owningSubcollectionData?.salePrice ?? ''));
     setEditProductGstRate(String(product.gstRate ?? product.gst_rate ?? owningSubcollectionData?.gstRate ?? 0));
     setEditProductGstType(product.gstType ?? product.gst_type ?? owningSubcollectionData?.gstType ?? 'exclusive');
+    setDeodapFields({
+      sku: String(product.sku ?? product.inventoryRow?.sku ?? product.productCode ?? ''),
+      tags: Array.isArray(product.tags) ? product.tags.join(', ') : String(product.tags || ''),
+      compareAtPrice: String(product.compareAtPrice ?? ''),
+      discountPercentage: String(product.discountPercentage ?? ''),
+      vendor: String(product.vendor ?? ''),
+      productType: String(product.productType ?? ''),
+      descriptionHtml: String(product.descriptionHtml ?? ''),
+      descriptionText: String(product.descriptionText ?? ''),
+      keyFeatures: Array.isArray(product.keyFeatures) ? product.keyFeatures.join('\n') : String(product.keyFeatures || ''),
+      faqs: JSON.stringify(Array.isArray(product.faqs) ? product.faqs : [], null, 2),
+      source: String(product.source ?? 'deodap.in'),
+      productUrl: String(product.productUrl ?? ''),
+      handle: String(product.handle ?? ''),
+      available: product.available !== false,
+    });
     setShowProductForm(true);
   };
 
@@ -2394,6 +2729,33 @@ for (const product of newProducts) {
         price: Number(editProductRetailPrice || 0),
         gstRate: Math.max(0, Number(editProductGstRate) || 0),
         gstType: editProductGstType || 'exclusive',
+        // DeoDap catalog metadata is additive; productCode and image fields remain the existing inventory values.
+        sku: deodapFields.sku.trim() || productCode.trim(),
+        tags: deodapFields.tags.split(',').map(tag => tag.trim()).filter(Boolean),
+        compareAtPrice: Number(deodapFields.compareAtPrice) || 0,
+        discountPercentage: deodapFields.discountPercentage !== ''
+          ? Number(deodapFields.discountPercentage) || 0
+          : (Number(deodapFields.compareAtPrice) > 0
+            ? Math.max(0, ((Number(deodapFields.compareAtPrice) - Number(editProductRetailPrice || 0)) / Number(deodapFields.compareAtPrice)) * 100)
+            : 0),
+        vendor: deodapFields.vendor.trim(),
+        productType: deodapFields.productType.trim(),
+        descriptionHtml: deodapFields.descriptionHtml,
+        descriptionText: deodapFields.descriptionText,
+        keyFeatures: deodapFields.keyFeatures.split('\n').map(item => item.trim()).filter(Boolean),
+        faqs: (() => {
+          try {
+            const parsed = JSON.parse(deodapFields.faqs || '[]');
+            if (!Array.isArray(parsed)) throw new Error('FAQs must be a JSON array.');
+            return parsed;
+          } catch (error) {
+            throw new Error('FAQs must be valid JSON in array format, for example: [{"question":"Question","answer":"Answer"}].');
+          }
+        })(),
+        source: deodapFields.source.trim(),
+        productUrl: deodapFields.productUrl.trim(),
+        handle: deodapFields.handle.trim(),
+        available: Boolean(deodapFields.available),
         updatedAt: serverTimestamp(),
       };
 
@@ -2436,13 +2798,30 @@ for (const product of newProducts) {
         };
       }
 
-      await updateDoc(productDocRef, productData);
+      const subcollectionRef = doc(
+        db, "collections", selectedMainCollectionId, "subcollections",
+        editingProduct.subcollectionId || selectedSubcollectionId
+      );
+      const batch = writeBatch(db);
+      batch.update(productDocRef, productData);
       if (autoSubcollectionUpdate) {
-        await updateDoc(
-          doc(db, "collections", selectedMainCollectionId, "subcollections", editingProduct.subcollectionId || selectedSubcollectionId),
-          autoSubcollectionUpdate
-        );
+        batch.update(subcollectionRef, autoSubcollectionUpdate);
       }
+      // Store a product-keyed snapshot on the parent subcollection without replacing
+      // existing subcollection fields or legacy shared pricing/inventory data.
+      batch.set(subcollectionRef, {
+        deodapProductDetails: {
+          [editingProduct.id]: {
+            productId: editingProduct.id,
+            productName: productName.trim(),
+            productCode: productCode.trim(),
+            ...productData,
+            updatedAt: serverTimestamp(),
+          },
+        },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await batch.commit();
 
       alert("Product updated successfully!");
       fetchProducts();
@@ -2770,6 +3149,13 @@ for (const product of newProducts) {
     setEditingProduct(null);
     setShowProductForm(false);
     setProductDestination("");
+    setDeodapRawJson('');
+    setDeodapRawData({});
+    setDeodapFields({
+      sku: '', tags: '', compareAtPrice: '', discountPercentage: '', vendor: '',
+      productType: '', descriptionHtml: '', descriptionText: '', keyFeatures: '', faqs: '[]',
+      source: 'deodap.in', productUrl: '', handle: '', available: true,
+    });
     setNewProducts([]);
     setCurrentImageIndex(0);
   };
@@ -4932,6 +5318,37 @@ alert(
                                               </div>
                                             ))}
                                           </div>
+                                          <section className="deodap-editor-panel">
+                                            <div className="deodap-editor-heading">
+                                              <span className="deodap-editor-eyebrow">DEODAP CATALOG</span>
+                                              <h4>Product content & pricing</h4>
+                                              <p>Update scraped storefront details without removing your existing inventory, GST or tiered pricing.</p>
+                                            </div>
+                                            <div className="deodap-json-loader">
+                                              <label htmlFor="deodap-product-json">Import one scraped product JSON</label>
+                                              <textarea id="deodap-product-json" rows="5" value={deodapRawJson} onChange={e => setDeodapRawJson(e.target.value)} placeholder='Paste the complete product JSON exported by your scraper…' />
+                                              <div className="deodap-json-loader-footer"><span>Loads title, price, SKU, tags, descriptions, variants, image metadata and other scraper fields.</span><button type="button" onClick={loadDeoDapScrapedJson} disabled={!deodapRawJson.trim()}>Load JSON into fields</button></div>
+                                            </div>
+                                            <div className="deodap-editor-grid">
+                                              <div className="form-group"><label>SKU</label><input value={deodapFields.sku} onChange={e => updateDeodapField('sku', e.target.value)} placeholder="e.g. 0510_travelling_pillow" /></div>
+                                              <div className="form-group"><label>Compare-at price (₹)</label><input type="number" min="0" step="0.01" value={deodapFields.compareAtPrice} onChange={e => updateDeodapField('compareAtPrice', e.target.value)} placeholder="MRP / original price" /></div>
+                                              <div className="form-group"><label>Discount (%)</label><input type="number" min="0" max="100" step="0.01" value={deodapFields.discountPercentage} onChange={e => updateDeodapField('discountPercentage', e.target.value)} placeholder="Auto-calculated if blank" /></div>
+                                              <div className="form-group"><label>Vendor / brand</label><input value={deodapFields.vendor} onChange={e => updateDeodapField('vendor', e.target.value)} placeholder="DeoDap" /></div>
+                                              <div className="form-group"><label>Product type</label><input value={deodapFields.productType} onChange={e => updateDeodapField('productType', e.target.value)} placeholder="Category / type" /></div>
+                                              <div className="form-group"><label>Tags (comma-separated)</label><input value={deodapFields.tags} onChange={e => updateDeodapField('tags', e.target.value)} placeholder="travel, accessories, bestseller" /></div>
+                                              <div className="form-group"><label>Source</label><input value={deodapFields.source} onChange={e => updateDeodapField('source', e.target.value)} placeholder="deodap.in" /></div>
+                                              <div className="form-group"><label>Product handle</label><input value={deodapFields.handle} onChange={e => updateDeodapField('handle', e.target.value)} placeholder="product-url-handle" /></div>
+                                              <div className="form-group deodap-wide"><label>Source product URL</label><input type="url" value={deodapFields.productUrl} onChange={e => updateDeodapField('productUrl', e.target.value)} placeholder="https://..." /></div>
+                                              <div className="form-group"><label>Currency</label><input value={deodapFields.currency} onChange={e => updateDeodapField('currency', e.target.value)} placeholder="INR" /></div>
+                                              <div className="form-group"><label>Origin</label><input value={deodapFields.origin} onChange={e => updateDeodapField('origin', e.target.value)} placeholder="Source product origin" /></div>
+                                              <div className="form-group deodap-wide"><label>Scraped at</label><input value={deodapFields.scrapedAt} onChange={e => updateDeodapField('scrapedAt', e.target.value)} placeholder="ISO date/time from scraper" /></div>
+                                              <div className="form-group deodap-wide"><label>Plain-text description</label><textarea rows="4" value={deodapFields.descriptionText} onChange={e => updateDeodapField('descriptionText', e.target.value)} placeholder="Readable product description" /></div>
+                                              <div className="form-group deodap-wide"><label>HTML description</label><textarea rows="6" value={deodapFields.descriptionHtml} onChange={e => updateDeodapField('descriptionHtml', e.target.value)} placeholder="<p>Product description...</p>" /></div>
+                                              <div className="form-group deodap-wide"><label>Key features (one per line)</label><textarea rows="4" value={deodapFields.keyFeatures} onChange={e => updateDeodapField('keyFeatures', e.target.value)} placeholder="Lightweight design&#10;Easy to carry&#10;Durable material" /></div>
+                                              <div className="form-group deodap-wide"><label>FAQs (JSON array)</label><textarea rows="6" value={deodapFields.faqs} onChange={e => updateDeodapField('faqs', e.target.value)} placeholder={'[{"question":"What is included?","answer":"One product."}]'} /><small>Keep this as a valid JSON array of question/answer objects.</small></div>
+                                              <label className="deodap-availability"><input type="checkbox" checked={deodapFields.available} onChange={e => updateDeodapField('available', e.target.checked)} /> Available for sale</label>
+                                            </div>
+                                          </section>
                                       </div>
                                     </div>
                                   </>
@@ -5113,6 +5530,35 @@ alert(
                     </>}
                   </div>
                   {productEntryMode === 'manage' && (
+                  <>
+                  <div className="admin-section deodap-folder-sync-panel">
+                    <div className="deodap-folder-sync-heading">
+                      <div>
+                        <span className="deodap-eyebrow">CATALOG MATCHING</span>
+                        <h3>Connect DeoDap output folder</h3>
+                        <p>Upload the scraper output folder once. Products with a unique matching product code/SKU can be connected together. Manually match the remaining products in their rows; product codes and images are preserved.</p>
+                      </div>
+                      <label className="deodap-folder-upload-button">
+                        <span>{deodapFolderLoading ? 'Reading folder…' : 'Choose output folder'}</span>
+                        <input type="file" webkitdirectory="" directory="" multiple accept=".json,application/json" onChange={handleDeoDapFolderUpload} disabled={deodapFolderLoading} />
+                      </label>
+                    </div>
+                    <div className="deodap-folder-sync-stats">
+                      <span><strong>{deodapScrapedCatalog.length}</strong> scraped records loaded</span>
+                      {deodapFolderName && <span>Folder: <strong>{deodapFolderName}</strong></span>}
+                      <span>Product code: <strong>preserved</strong></span>
+                      <span>Image URLs: <strong>not imported</strong></span>
+                      <span>Tiered pricing: <strong>all roles updated</strong></span>
+                      <span><strong>{Object.values(deodapConnectionStatus).filter(item => item.state === 'connected').length}</strong> connected</span>
+                      <span><strong>{Object.values(deodapConnectionStatus).filter(item => item.state === 'failed').length}</strong> failed</span>
+                    </div>
+                    <div className="deodap-bulk-actions">
+                      <button type="button" className="deodap-connect-all-button" onClick={handleConnectAllDeoDapMatches} disabled={deodapBulkConnecting || deodapFolderLoading || !deodapScrapedCatalog.length || !allCollectionProducts.length}>
+                        {deodapBulkConnecting ? 'Connecting matched products…' : `Connect & update all matched products (${allCollectionProducts.filter(product => { const key = normalizeProductCode(product.productCode); return key && deodapScrapedCatalog.filter(item => normalizeProductCode(getDeoDapRecordCode(item)) === key).length === 1; }).length})`}
+                      </button>
+                      <span>Unique code/SKU matches connect automatically. Ambiguous and unmatched products are skipped and reported.</span>
+                    </div>
+                  </div>
                   <div className="admin-section">
                     <h3>Current Products</h3>
                     {selectedMainCollectionId ? (
@@ -5137,7 +5583,7 @@ alert(
                           </div>
                           <div className="product-details-table-wrap">
                             <table className="product-details-table">
-                              <thead><tr><th>Product</th><th>Code</th><th>Subcollection</th><th>Destination</th><th>Purchase</th><th>Retail</th><th>GST</th><th>Stock</th><th>Purchase Stock Total</th><th>Retail Stock Total</th><th>Actions</th></tr></thead>
+                              <thead><tr><th>Product</th><th>Code</th><th>SKU</th><th>Tags</th><th>Subcollection</th><th>Destination</th><th>Purchase</th><th>Selling price</th><th>Compare-at</th><th>Discount</th><th>Vendor</th><th>Product type</th><th>GST</th><th>Stock</th><th>Purchase stock total</th><th>Retail stock total</th><th>Plain description</th><th>HTML description</th><th>Key features</th><th>FAQs</th><th>Source</th><th>Product URL</th><th>Handle</th><th>Origin</th><th>Currency</th><th>Scraped at</th><th>Scraped variants</th><th>Inventory row</th><th>Available</th><th>Actions</th></tr></thead>
                               <tbody>
                                 {filteredProducts.map((product) => {
                                   const stock = Number(product.quantity ?? product.current_stock) || 0;
@@ -5145,15 +5591,57 @@ alert(
                                   return <tr key={`detail-${product.destination || 'products'}-${product.id}`}>
                                     <td>{product.productName || 'Unnamed product'}</td>
                                     <td>{product.productCode || '—'}</td>
+                                    <td>{product.sku || product.inventoryRow?.sku || '—'}</td>
+                                    <td title={(Array.isArray(product.tags) ? product.tags : []).join(', ')}>{Array.isArray(product.tags) ? product.tags.join(', ') || '—' : product.tags || '—'}</td>
                                     <td>{product.subcollectionName || '—'}</td>
                                     <td>{product.destination === 'appProducts' ? 'Mobile App' : 'Website'}</td>
                                     <td>₹{(Number(product.purchasePrice ?? product.purchaseRate) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                                     <td>₹{retail.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                                    <td>₹{(Number(product.compareAtPrice) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                                    <td>{Number(product.discountPercentage) || (Number(product.compareAtPrice) > 0 ? Math.max(0, ((Number(product.compareAtPrice) - retail) / Number(product.compareAtPrice)) * 100) : 0).toFixed(2)}%</td>
+                                    <td>{product.vendor || '—'}</td>
+                                    <td>{product.productType || '—'}</td>
                                     <td>{Number(product.gstRate ?? product.gst_rate) || 0}%</td>
                                     <td>{stock.toLocaleString('en-IN')}</td>
                                     <td>₹{((Number(product.purchasePrice ?? product.purchaseRate) || 0) * stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                                     <td>₹{(retail * stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
-                                    <td><button type="button" className="manage-product-edit-button" onClick={() => startEditProduct(product)}>Edit</button></td>
+                                    <td><details className="product-field-details"><summary>{product.descriptionText ? 'View description' : '—'}</summary><div>{product.descriptionText || 'No plain-text description saved.'}</div></details></td>
+                                    <td><details className="product-field-details"><summary>{product.descriptionHtml ? 'View HTML' : '—'}</summary><pre>{product.descriptionHtml || 'No HTML description saved.'}</pre></details></td>
+                                    <td><details className="product-field-details"><summary>{product.keyFeatures?.length ? `${product.keyFeatures.length} feature(s)` : '—'}</summary><pre>{Array.isArray(product.keyFeatures) ? product.keyFeatures.join('\n') : product.keyFeatures || ''}</pre></details></td>
+                                    <td><details className="product-field-details"><summary>{product.faqs?.length ? `${product.faqs.length} FAQ(s)` : '—'}</summary><pre>{JSON.stringify(product.faqs || [], null, 2)}</pre></details></td>
+                                    <td>{product.source || '—'}</td>
+                                    <td>{product.productUrl ? <a href={product.productUrl} target="_blank" rel="noreferrer">Open source</a> : '—'}</td>
+                                    <td>{product.handle || '—'}</td>
+                                    <td>{product.origin || '—'}</td>
+                                    <td>{product.currency || 'INR'}</td>
+                                    <td>{product.scrapedAt || '—'}</td>
+                                    <td><details className="product-field-details"><summary>{product.variants?.length ? `${product.variants.length} variant(s)` : '—'}</summary><pre>{JSON.stringify(product.variants || [], null, 2)}</pre></details></td>
+                                    <td><details className="product-field-details"><summary>{product.inventoryRow ? 'View row' : '—'}</summary><pre>{JSON.stringify(product.inventoryRow || {}, null, 2)}</pre></details></td>
+                                    <td><span className={`deodap-status ${product.available === false ? 'is-unavailable' : 'is-available'}`}>{product.available === false ? 'Unavailable' : 'Available'}</span></td>
+                                    <td className="deodap-row-actions">
+                                      {deodapScrapedCatalog.length > 0 && (() => {
+                                        const rowKey = `${product.destination || 'products'}:${product.id}`;
+                                        const search = deodapMatchSearch[rowKey] || '';
+                                        const selectedKey = deodapSelectedMatch[rowKey] || '';
+                                        const matches = deodapScrapedCatalog.filter(item => `${item.__title} ${item.__sku} ${item.handle || ''} ${item.inventory_name || ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8);
+                                        const productCodeKey = normalizeProductCode(product.productCode);
+                                        const codeMatches = productCodeKey
+                                          ? deodapScrapedCatalog.filter(item => normalizeProductCode(getDeoDapRecordCode(item)) === productCodeKey)
+                                          : [];
+                                        const automaticRecord = codeMatches.length === 1 ? codeMatches[0] : null;
+                                        const selectedRecord = deodapScrapedCatalog.find(item => item.__catalogKey === selectedKey) || automaticRecord;
+                                        const connectionStatus = deodapConnectionStatus[rowKey];
+                                        return <div className="deodap-row-matcher">
+                                          {connectionStatus && <small className={`deodap-connection-status is-${connectionStatus.state}`}>{connectionStatus.state === 'connected' ? '✓ Connected' : connectionStatus.state === 'failed' ? `✕ Failed: ${connectionStatus.error || 'see report'}` : '… Connecting'}</small>}
+                                          {automaticRecord && !selectedKey && <small className="deodap-auto-match-note">Auto-matched by product code {product.productCode} ↔ SKU {automaticRecord.__sku}. Review, then connect.</small>}
+                                          {!automaticRecord && codeMatches.length > 1 && <small className="deodap-auto-match-note deodap-auto-match-warning">Multiple scraper records use code {product.productCode}; choose one manually.</small>}
+                                          <input type="search" value={search} onChange={e => { setDeodapMatchSearch(prev => ({ ...prev, [rowKey]: e.target.value })); setDeodapSelectedMatch(prev => ({ ...prev, [rowKey]: '' })); }} placeholder="Search scraped name…" aria-label={`Search scraper products for ${product.productName || product.productCode}`} />
+                                          {search && !selectedRecord && <div className="deodap-match-options">{matches.map(item => <button key={item.__catalogKey} type="button" onClick={() => { setDeodapSelectedMatch(prev => ({ ...prev, [rowKey]: item.__catalogKey })); setDeodapMatchSearch(prev => ({ ...prev, [rowKey]: item.__title })); }}><strong>{item.__title}</strong><small>{item.__sku ? `SKU: ${item.__sku} · ` : ''}{item.__price !== '' ? `₹${item.__price}` : 'No price'} · {item.__fileName}</small></button>)}{matches.length === 0 && <span>No matching scraper records</span>}</div>}
+                                          {selectedRecord && <div className="deodap-selected-match"><span>Matched: {selectedRecord.__title}</span><button type="button" disabled={deodapConnectingId === rowKey} onClick={() => handleConnectDeoDapRecord(product, selectedRecord)}>{deodapConnectingId === rowKey ? 'Saving…' : 'Connect & update'}</button></div>}
+                                        </div>;
+                                      })()}
+                                      <button type="button" className="manage-product-edit-button" onClick={() => startEditProduct(product)}>Edit</button>
+                                    </td>
                                   </tr>;
                                 })}
                               </tbody>
@@ -5182,6 +5670,7 @@ alert(
                       <p className="select-prompt">Please select a main collection to view all products and their automatically created subcollections.</p>
                     )}
                   </div>
+                  </>
                   )}
                 </div>
               )}
@@ -6266,6 +6755,30 @@ alert(
 
 
 
+      {deodapConnectionReport && (
+        <div className="deodap-report-backdrop" role="presentation" onClick={() => setDeodapConnectionReport(null)}>
+          <section className="deodap-report-dialog" role="dialog" aria-modal="true" aria-labelledby="deodap-report-title" onClick={event => event.stopPropagation()}>
+            <div className="deodap-report-heading">
+              <div><span className="deodap-eyebrow">DEODAP SYNC REPORT</span><h3 id="deodap-report-title">Connection results</h3></div>
+              <button type="button" aria-label="Close report" onClick={() => setDeodapConnectionReport(null)}>×</button>
+            </div>
+            <div className="deodap-report-summary">
+              <span className="is-connected"><strong>{deodapConnectionReport.connected?.length || 0}</strong> Connected</span>
+              <span className="is-failed"><strong>{deodapConnectionReport.failed?.length || 0}</strong> Failed</span>
+              <span className="is-unmatched"><strong>{deodapConnectionReport.unmatched?.length || 0}</strong> Unmatched</span>
+              <span className="is-ambiguous"><strong>{deodapConnectionReport.ambiguous?.length || 0}</strong> Ambiguous</span>
+            </div>
+            {deodapConnectionReport.message && <p>{deodapConnectionReport.message}</p>}
+            <div className="deodap-report-list">
+              {(deodapConnectionReport.connected || []).map((item, index) => <div className="deodap-report-row is-connected" key={`connected-${item.key || index}`}><span>✓</span><div><strong>{item.title}</strong><small>Code: {item.productCode || '—'} · SKU: {item.sku || '—'}</small></div><b>Connected</b></div>)}
+              {(deodapConnectionReport.failed || []).map((item, index) => <div className="deodap-report-row is-failed" key={`failed-${item.key || index}`}><span>✕</span><div><strong>{item.title}</strong><small>Code: {item.productCode || '—'} · SKU: {item.sku || '—'} · {item.error || 'Update failed'}</small></div><b>Failed</b></div>)}
+              {(deodapConnectionReport.unmatched || []).map((product, index) => <div className="deodap-report-row is-unmatched" key={`unmatched-${product.destination || ''}-${product.id || index}`}><span>○</span><div><strong>{product.productName || product.name || 'Unnamed product'}</strong><small>Code: {product.productCode || '—'} · No unique scraper SKU/code match found</small></div><b>Not connected</b></div>)}
+              {(deodapConnectionReport.ambiguous || []).map((item, index) => <div className="deodap-report-row is-ambiguous" key={`ambiguous-${item.product?.destination || ''}-${item.product?.id || index}`}><span>!</span><div><strong>{item.product?.productName || item.product?.name || 'Unnamed product'}</strong><small>Code: {item.product?.productCode || '—'} · {item.reason || `${item.count} scraper records share this code; choose one manually.`}</small></div><b>Needs review</b></div>)}
+            </div>
+            <div className="deodap-report-footer"><button type="button" onClick={() => setDeodapConnectionReport(null)}>Close</button></div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

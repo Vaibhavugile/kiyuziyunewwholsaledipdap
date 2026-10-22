@@ -18,18 +18,52 @@ import QRCode from "qrcode";
 
 import "./Barcode.css";
 
-// QR labels use the product code, not the Firestore document ID.
+// QR labels encode productCode; the visible label starts with SKU, falling back to product code.
 const getProductCode = (product) => String(product?.productCode || "").trim();
+const getProductSku = (product) => String(product?.sku || product?.SKU || product?.productSku || product?.variantSku || "").trim();
+const getProductSkuOrCode = (product) => {
+  const sku = getProductSku(product);
+  const code = getProductCode(product);
+  return sku ? `SKU: ${sku}` : `Code: ${code || "-"}`;
+};
+const getProductCodeLabel = (product) => `Product Code: ${getProductCode(product) || "-"}`;
 const getProductPrice = (product) => {
-  const candidates = [product?.resolvedRetailPrice, product?.sellingPrice, product?.salePrice, product?.price, product?.retailPrice, product?.mrp];
+  const candidates = [product?.resolvedRetailPrice, product?.sellingPrice, product?.salePrice, product?.price, product?.retailPrice];
   const value = candidates.find((v) => v !== undefined && v !== null && v !== "");
   if (value === undefined) return null;
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : null;
 };
+const getCompareAtPrice = (product) => {
+  const candidates = [product?.compareAtPrice, product?.compare_at_price, product?.mrp, product?.originalPrice, product?.original_price];
+  const value = candidates.find((v) => v !== undefined && v !== null && v !== "");
+  if (value === undefined) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
+const getDiscountPercentage = (product) => {
+  const candidates = [product?.discountPercentage, product?.discount_percentage, product?.discountPercent];
+  const value = candidates.find((v) => v !== undefined && v !== null && v !== "");
+  if (value !== undefined) {
+    const amount = Number(String(value).replace("%", "").trim());
+    if (Number.isFinite(amount)) return Math.max(0, amount);
+  }
+  const selling = getProductPrice(product);
+  const compareAt = getCompareAtPrice(product);
+  if (selling !== null && compareAt !== null && compareAt > selling && compareAt > 0) return Math.round(((compareAt - selling) / compareAt) * 100);
+  return null;
+};
 const formatLabelPrice = (product) => {
   const price = getProductPrice(product);
-  return price === null ? "Price: N/A" : `Price: ₹${price.toFixed(2)}`;
+  return price === null ? "Selling: N/A" : `Selling: ₹${price.toFixed(2)}`;
+};
+const formatCompareAtPrice = (product) => {
+  const price = getCompareAtPrice(product);
+  return price === null ? "" : `MRP: ₹${price.toFixed(2)}`;
+};
+const formatDiscount = (product) => {
+  const discount = getDiscountPercentage(product);
+  return discount === null ? "" : `${discount.toFixed(discount % 1 ? 1 : 0)}% OFF`;
 };
 
 /* =========================================================
@@ -121,14 +155,10 @@ const BarcodeLabel = ({
     generateQRCode();
   }, [product?.productCode]);
 
-  const productName =
-    product?.productName ||
-    product?.name ||
-    "";
-
-  const productCode =
-    getProductCode(product) || "-";
+  const skuOrCode = getProductSkuOrCode(product);
   const productPrice = formatLabelPrice(product);
+  const compareAtPrice = formatCompareAtPrice(product);
+  const discount = formatDiscount(product);
 
   const isLarge =
     printLayout ===
@@ -151,12 +181,11 @@ const BarcodeLabel = ({
       />
 
       <div className="screen-label-text">
-        <strong>
-          {productName}
-        </strong>
-
-        <div className="screen-label-code">Code: {productCode}</div>
+        <strong className="screen-label-sku" title={skuOrCode}>{skuOrCode}</strong>
+        <div className="screen-label-code">{getProductCodeLabel(product)}</div>
+        {compareAtPrice && <div className="screen-label-compare">{compareAtPrice}</div>}
         <div className="screen-label-price">{productPrice}</div>
+        {discount && <div className="screen-label-discount">{discount}</div>}
       </div>
     </div>
   );
@@ -654,14 +683,15 @@ const productsForDisplay = useMemo(() => filteredProducts.filter((product) => {
       textTop: 4.0,
       textWidth: 26.0,
 
-      titleFont: 8.6,
-      subFont: 7.5,
-      codeFont: 7.5,
-
-      titleTop: 3.5,
+      titleFont: 7.2,
+      subFont: 6.2,
+      codeFont: 6.2,
+      titleTop: 2.0,
       subTop: 8.0,
-      codeTop: 12.0,
-      priceTop: 16.0,
+      codeTop: 5.8,
+      priceTop: 12.0,
+      compareTop: 9.0,
+      discountTop: 15.4,
     },
 
 THERMAL_32_5X18: {
@@ -669,25 +699,24 @@ THERMAL_32_5X18: {
   height: 18,
 
   /* QR */
-  qrLeft: 1.5,
-  qrTop: 6.9,
-  qrSize: 11.1,
-
+  qrLeft: 1.3,
+  qrTop: 3.5,
+  qrSize: 10.5,
   /* TEXT */
-  textLeft: 14.2,
-  textTop: 7.1,
-  textWidth: 16.5,
-
+  textLeft: 13.0,
+  textTop: 1.1,
+  textWidth: 18.5,
   /* TEXT SIZE */
-  titleFont: 6.2,
-  subFont: 5.6,
-  codeFont: 5.6,
-
-  /* TEXT */
-  titleTop: 7.1,
-  subTop: 11.6,
+  titleFont: 5.1,
+  subFont: 4.3,
+  codeFont: 4.5,
+  /* SKU then prices */
+  titleTop: 1.2,
+  subTop: 5.0,
   codeTop: 11.4,
-  priceTop: 14.2,
+  priceTop: 7.3,
+  compareTop: 5.0,
+  discountTop: 10.0,
 },
   };
 
@@ -840,15 +869,11 @@ const createPrintQR = async (productCode) => {
         return "";
       }
 
-      const productName =
-        String(
-          product?.productName ||
-          product?.name ||
-          ""
-        );
-
+      const skuOrCode = getProductSkuOrCode(product);
       const qr = await createPrintQR(productCode);
       const productPrice = formatLabelPrice(product);
+      const compareAtPrice = formatCompareAtPrice(product);
+      const discount = formatDiscount(product);
 
       return `
         <div
@@ -865,24 +890,22 @@ const createPrintQR = async (productCode) => {
          ${qr}
 
 
-          <!-- ============================
-               PRODUCT NAME
-          ============================= -->
-
-          <div class="print-product-name">
-            ${escapeHtml(
-              productName
-            )}
+          <!-- SKU is printed across the full label width at the bottom. -->
+          <div class="print-product-sku-bottom" title="${escapeHtml(getProductSku(product) || getProductCode(product))}">
+            ${escapeHtml(getProductSku(product) || getProductCode(product) || "-")}
           </div>
-
 
           <div class="print-product-code">
-            ${escapeHtml(productCode)}
+            ${escapeHtml(getProductCodeLabel(product))}
           </div>
+
+          ${compareAtPrice ? `<div class="print-product-compare">${escapeHtml(compareAtPrice)}</div>` : ""}
 
           <div class="print-product-price">
             ${escapeHtml(productPrice)}
           </div>
+
+          ${discount ? `<div class="print-product-discount">${escapeHtml(discount)}</div>` : ""}
 
         </div>
       `;
@@ -1228,7 +1251,7 @@ const createPrintQR = async (productCode) => {
                   ${config.textWidth}mm !important;
 
                 height:
-                  ${config.height <= 18 ? 7.5 : 10}mm !important;
+                  3.2mm !important;
 
                 margin:
                   0 !important;
@@ -1254,31 +1277,52 @@ const createPrintQR = async (productCode) => {
                   1 !important;
 
                 white-space:
-                  normal !important;
+                  nowrap !important;
 
                 overflow:
                   hidden !important;
 
                 overflow-wrap:
-                  anywhere !important;
+                  normal !important;
 
                 display:
-                  -webkit-box !important;
-
-                -webkit-box-orient:
-                  vertical !important;
-
-                -webkit-line-clamp:
-                  2 !important;
+                  block !important;
 
                 text-overflow:
-                  clip !important;
+                  ellipsis !important;
 
                 transform:
                   none !important;
 
               }
 
+
+              /* SKU: full-width bottom line, below QR and pricing content */
+              .print-product-sku-bottom {
+                position: absolute !important;
+                left: 1mm !important;
+                right: 1mm !important;
+                bottom: 0.5mm !important;
+                width: calc(100% - 2mm) !important;
+                height: 2.6mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                display: block !important;
+                text-align: center !important;
+                font-family: Arial, Helvetica, sans-serif !important;
+                font-size: 5pt !important;
+                font-weight: bold !important;
+                line-height: 1 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                box-sizing: border-box !important;
+                z-index: 5 !important;
+              }
+
+              .print-product-name.print-product-sku {
+                display: none !important;
+              }
 
               /* =================================================
                  SUBCOLLECTION
@@ -1402,24 +1446,80 @@ const createPrintQR = async (productCode) => {
                  PRINT MEDIA
               ================================================= */
 
-                             .print-product-price {
-                 position: absolute !important;
-                 left: ${config.textLeft}mm !important;
-                 top: ${config.priceTop}mm !important;
-                 width: ${config.textWidth}mm !important;
-                 height: 4.5mm !important;
-                 margin: 0 !important;
-                 padding: 0 !important;
-                 text-align: left !important;
-                 font-family: Arial, Helvetica, sans-serif !important;
-                 font-size: ${config.codeFont}pt !important;
-                 font-weight: bold !important;
-                 line-height: 1 !important;
-                 white-space: nowrap !important;
-                 overflow: hidden !important;
-                 text-overflow: ellipsis !important;
-                 transform: none !important;
-               }
+                             .print-product-code {
+  position: absolute !important;
+  left: ${config.textLeft}mm !important;
+  top: ${config.codeTop}mm !important;
+  width: ${config.textWidth}mm !important;
+  height: 2.8mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: ${config.height <= 18 ? 3.7 : 5.0}pt !important;
+  font-weight: normal !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.print-product-compare {
+  position: absolute !important;
+  left: ${config.textLeft}mm !important;
+  top: ${config.compareTop}mm !important;
+  width: ${config.textWidth}mm !important;
+  height: 3mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: ${config.subFont}pt !important;
+  font-weight: normal !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  text-decoration: line-through !important;
+  color: #64748b !important;
+}
+
+.print-product-price {
+  position: absolute !important;
+  left: ${config.textLeft}mm !important;
+  top: ${config.priceTop}mm !important;
+  width: ${config.textWidth}mm !important;
+  height: 3mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: ${config.codeFont}pt !important;
+  font-weight: bold !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.print-product-discount {
+  position: absolute !important;
+  left: ${config.textLeft}mm !important;
+  top: ${config.discountTop}mm !important;
+  width: ${config.textWidth}mm !important;
+  height: 3mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: ${config.subFont}pt !important;
+  font-weight: bold !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: #166534 !important;
+}
 
 @media print {
 
