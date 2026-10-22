@@ -65,6 +65,8 @@ import DropshipperEnquiries from './pages/dropshipper/DropshipperEnquiries';
 import DropshipperChangePassword from "./pages/dropshipper/DropshipperChangePassword";
 import AdminResellerPayments from './pages/dropshipper/AdminResellerPayments';
 import AdminDailyOrders from "./pages/AdminDailyOrders";
+import ProductDetailsPage from './pages/ProductDetailsPage';
+import AdminHomepageSections from './pages/AdminHomepageSections';
 function App() {
     useEffect(() => {
     initMetaPixel();
@@ -107,6 +109,8 @@ function App() {
             <Route path="/collections/:collectionId" element={<SubcollectionsPage />} />
             <Route path="/collections/:collectionId/all-products" element={<ProductsPage />} />            <Route path="/cart" element={<CartPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/product/:slug/:collectionId/:subcollectionId/:productId" element={<ProductDetailsPage />} />
+
             <Route path="/order-success" element={<OrderSuccessPage />} />
             <Route path="/order-history" element={<OrderHistoryPage />} /> {/* Add the new route here */}
             <Route path="/report" element={<ReportPage />} />
@@ -117,6 +121,11 @@ function App() {
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/refund-policy" element={<RefundPolicy />} />
             <Route path="/cancellation-policy" element={<CancellationPolicy />} />
+            
+                    <Route
+  path="/admin/homesection"
+  element={<AdminHomepageSections/>}
+/>
             <Route
   path="/admin/reseller-payments/:sellerId"
   element={<AdminResellerPayments />}

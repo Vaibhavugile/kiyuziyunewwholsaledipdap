@@ -9,6 +9,7 @@ import InstagramReelsSection from "../components/InstagramReelsSection";
 import { trackMetaEvent } from "../utils/pixels";
 import earringImage from "../assets/earing.jpeg";
 import WholesaleBusinessSection from "../components/WholesaleBusinessSection";
+import HomepageSections from "../components/HomepageSections";
 /*
  * Local fallback categories:
  * These are shown only when Firestore's "collections" collection is empty,
@@ -153,6 +154,9 @@ const HomePage = () => {
   return (
     <>
       <HeroSection />
+
+      {/* Dynamic price, festival and sale sections are inserted into the existing homepage. */}
+      <HomepageSections />
 
       <section
         id="collections"

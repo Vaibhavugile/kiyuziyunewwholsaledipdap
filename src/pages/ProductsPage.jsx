@@ -37,12 +37,21 @@ const PRODUCTS_PER_PAGE = 20;
 // --- Existing Pricing Logic (UNCHANGED) ---
 const getProductPrice = (product, subcollectionsMap, pricingKey) => {
   const subcollection = subcollectionsMap[product.subcollectionId];
-  if (!subcollection?.tieredPricing) return null;
+  const tieredPricing = subcollection?.tieredPricing || product?.tieredPricing;
+  const tiers = tieredPricing?.[pricingKey];
 
-  const tiers = subcollection.tieredPricing[pricingKey];
-  if (!tiers) return null;
+  if (Array.isArray(tiers) && tiers.length) {
+    const price = getPriceForQuantity(tiers, 1);
+    if (Number.isFinite(Number(price))) return Number(price);
+  }
 
-  return getPriceForQuantity(tiers, 0);
+  const directPrice =
+    product?.retailPrice ?? product?.salePrice ?? product?.sellingPrice ?? product?.price ??
+    subcollection?.retailPrice ?? subcollection?.salePrice ?? subcollection?.sellingPrice ?? subcollection?.price;
+
+  return directPrice !== undefined && directPrice !== null && directPrice !== ""
+    ? Number(directPrice)
+    : null;
 };
 
 
@@ -98,14 +107,6 @@ const [maxDownloadQty, setMaxDownloadQty] = useState("");
     total: 0,
     completed: 0
   });
-  const getPreviewImage = (url) => {
-    if (!url) return null;
-
-    // Low-cost preview (small size)
-    return `${url}&w=200&quality=40`;
-  };
-
-
   // ---------------------------------------------------------------------
   // ---------------------------------------------------------------------
 
@@ -236,6 +237,11 @@ trackMetaEvent("ViewContent", {
   const getAllImageUrls = (product) => {
     const urls = [];
     if (product?.image) urls.push(product.image);
+    if (Array.isArray(product?.additionalImages)) {
+      for (const img of product.additionalImages) {
+        if (img) urls.push(img);
+      }
+    }
     if (Array.isArray(product?.images)) {
       for (const img of product.images) {
         if (img) urls.push(img);
@@ -243,38 +249,6 @@ trackMetaEvent("ViewContent", {
     }
     return Array.from(new Set(urls));
   };
-  const prefetchProductImages = useCallback((productsToPrefetch = []) => {
-    productsToPrefetch.forEach((product) => {
-      const mainImage =
-        product?.image || product?.images?.[0] || null;
-
-      if (!mainImage) return;
-
-      const previewUrl = getPreviewImage(mainImage);
-
-      if (!prefetchedImagesRef.current.has(previewUrl)) {
-        const img = new Image();
-        img.src = previewUrl; // ✅ small preview only
-        prefetchedImagesRef.current.add(previewUrl);
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!products.length) return;
-
-    const PREFETCH_AHEAD = 10; // 👈 number of upcoming products
-    const startIndex = products.length;
-    const nextProducts = allProductsCache.current.slice(
-      startIndex,
-      startIndex + PREFETCH_AHEAD
-    );
-
-    if (nextProducts.length) {
-      prefetchProductImages(nextProducts);
-    }
-  }, [products, prefetchProductImages]);
-
   const handleLoadMoreAll = async () => {
     if (isFetchingMore || !hasMore || !lastVisibleRef.current) return;
 
@@ -321,9 +295,6 @@ trackMetaEvent("ViewContent", {
       const cacheSeen = new Set(allProductsCache.current.map(p => p.id));
       const uniqueForCache = fetched.filter(p => !cacheSeen.has(p.id));
       allProductsCache.current.push(...uniqueForCache);
-
-      // ✅ 3. 🔥 PREFETCH IMAGES FOR NEXT SCROLL (THIS IS THE KEY ADDITION)
-      prefetchProductImages(uniqueNewProducts);
 
       // ✅ 4. Update cursor
       lastVisibleRef.current = snap.docs[snap.docs.length - 1];
@@ -552,15 +523,24 @@ trackMetaEvent("ViewContent", {
     // 1️⃣ Client-side filtering
     if (searchUpper) {
       currentProducts = currentProducts.filter(product => {
-        const codeMatch =
-          product.productCode &&
-          product.productCode.toUpperCase().includes(searchUpper);
+        const searchableText = [
+          product.productName,
+          product.name,
+          product.productCode,
+          product.sku,
+          product.vendor,
+          product.productType,
+          product.type,
+          product.descriptionText,
+          product.description,
+          ...(Array.isArray(product.tags) ? product.tags : [product.tags]),
+          ...(Array.isArray(product.keyFeatures) ? product.keyFeatures : []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase();
 
-        const nameMatch =
-          product.productName &&
-          product.productName.toUpperCase().includes(searchUpper);
-
-        return codeMatch || nameMatch;
+        return searchableText.includes(debouncedSearchTerm.trim().toLocaleLowerCase());
       });
     }
 
@@ -634,7 +614,12 @@ else if (sortBy === 'qty-desc') {
       return product.variations.some(v => Number(v.quantity) > 0);
     }
 
-    return Number(product.quantity) > 0;
+    const stock = Number(product.quantity ?? product.current_stock ?? product.stock ?? 0);
+    const inventoryTracked = product.trackInventory ?? product.track_inventory;
+    if (inventoryTracked === false || inventoryTracked === "false") return product.available !== false && product.status !== "inactive";
+    if (stock > 0) return true;
+    // Imported catalog products can be marked available without an inventory quantity.
+    return product.available === true && inventoryTracked !== true && inventoryTracked !== "true";
   });
 }, [sortedProducts]);
   const handleAddToCart = (product, variation) => {
@@ -645,16 +630,15 @@ else if (sortBy === 'qty-desc') {
     }
 
     const subcollection = subcollectionsMap[product.subcollectionId];
-    if (!subcollection?.tieredPricing) {
+    const directPrice = getProductPrice(product, subcollectionsMap, pricingKey);
+    const tieredPricingData = subcollection?.tieredPricing || product?.tieredPricing || (
+      directPrice !== null ? { [pricingKey]: [{ min_quantity: 1, max_quantity: 999999, price: directPrice }] } : null
+    );
+    const roleBasedTiers = tieredPricingData?.[pricingKey];
+
+    if (!roleBasedTiers?.length) {
       console.error('Pricing information is missing for this product.');
-      return;
-    }
-
-    const tieredPricingData = subcollection.tieredPricing;
-    const roleBasedTiers = tieredPricingData[pricingKey];
-
-    if (!roleBasedTiers) {
-      console.error(`No pricing tiers found for pricingKey: ${pricingKey}`);
+      alert('Price information is not available for this product yet.');
       return;
     }
 
@@ -1044,6 +1028,9 @@ if (qty < minQty || qty > maxQty) {
   const getAllImagePathsForProduct = (product) => {
     const paths = [];
     if (product?.image) paths.push(product.image);
+    if (Array.isArray(product?.additionalImages)) {
+      for (const p of product.additionalImages) if (p) paths.push(p);
+    }
     if (Array.isArray(product?.images)) {
       for (const p of product.images) if (p) paths.push(p);
     }
@@ -1057,209 +1044,116 @@ if (qty < minQty || qty > maxQty) {
     <>
       <div className="products-page-container">
 
-        {/* HEADER */}
-        <div className="page-header-container">
-          <Link
-            to="/"
-            className="back-to-collections-icon"
-            aria-label="Back to Collections"
-          >
-            <FaArrowLeft />
-          </Link>
-
-          <div className="title-and-toggle-wrapper">
-
+        {/* Tanishka premium ivory, antique-gold and maroon storefront */}
+        <header className="dmart-store-header">
+          <div className="dmart-header-topline">
+            <Link to="/" className="back-to-collections-icon" aria-label="Back to collections">
+              <FaArrowLeft />
+            </Link>
+            <div className="dmart-brand-lockup">
+              <span className="dmart-brand-mark">T</span>
+              <div>
+                <p className="dmart-eyebrow">PREMIUM WHOLESALE JEWELLERY</p>
+                <h1>{mainCollection?.title || mainCollection?.name || "Shop Products"}</h1>
+              </div>
+            </div>
+            <Link to="/cart" className="dmart-header-cart" aria-label={`View cart, ${cartItemsCount} items`}>
+              <FaShoppingCart /><span>Cart</span><b>{cartItemsCount}</b>
+            </Link>
+          </div>
+          <div className="dmart-store-promise">
+            <span>✦ Curated designs</span><span>✦ Refined finishing</span><span>✦ Wholesale value</span>
+          </div>
+          <div className="dmart-mobile-controls">
             <button
               className="mobile-controls-toggle"
               onClick={() => setIsControlsVisible(!isControlsVisible)}
-              aria-label={isControlsVisible ? "Close filters and search" : "Open filters and search"}
+              aria-label={isControlsVisible ? "Close search and filters" : "Open search and filters"}
             >
               {isControlsVisible ? <FaTimes /> : <FaFilter />}
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* CONTROLS BLOCK */}
-        <div className={`product-controls ${isControlsVisible ? 'open' : ''}`}>
-
-          {/* Filter by Subcollection */}
-          <div className="filter-group">
-            <label htmlFor="subcollection-select">Filter:</label>
-            <select
-              id="subcollection-select"
-              value={selectedSubcollectionId}
-              onChange={(e) => {
-                // Trigger the fetch by changing the ID
-                setSelectedSubcollectionId(e.target.value);
-              }}
-            >
-              <option
-                value="all"
-              >
-                {subcollections.length === 0 ? 'No Categories Found' : 'All Products'}
-              </option>
-              {subcollections.map(sub => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {selectedSubcollectionId !== 'all' && (
-            <div className="filter-group">
-             <button
-  onClick={() => {
-    setDownloadAction("pdf");
-    setShowDownloadOptions(true);
-  }}
-  disabled={isFetchingMore || isLoadingProducts}
-  className="download-btn"
-  title={`Generate PDF catalog for ${
-    subcollectionsMap[selectedSubcollectionId]?.name || "category"
-  }`}
->
-  <FaDownload />
-  {isFetchingMore ? "Preparing PDF..." : "Generate PDF"}
-</button>
-            </div>
-          )}
-          <div className="filter-group">
-      <button
-  onClick={() => {
-    setDownloadAction("images");
-    setShowDownloadOptions(true);
-  }}
-  className="download-btn"
->
-  <FaDownload />
-  {selectedSubcollectionId === "all"
-    ? "Download All Images"
-    : "Download Category Images"}
-</button>
-
-{showDownloadOptions && (
-  <div className="download-options">
-
-    <div className="qty-range-inputs">
-      <label>Min Qty</label>
-      <input
-        type="number"
-        value={minDownloadQty}
-        onChange={(e) => setMinDownloadQty(e.target.value)}
-        placeholder="1"
-      />
-
-      <label>Max Qty</label>
-      <input
-        type="number"
-        value={maxDownloadQty}
-        onChange={(e) => setMaxDownloadQty(e.target.value)}
-        placeholder="100"
-      />
-    </div>
-
-    {downloadAction === "images" && (
-      <button
-        onClick={() => {
-          setShowDownloadOptions(false);
-          handleDownloadCollectionImagesDirect();
-        }}
-        className="download-confirm-btn"
-      >
-        Start Download
-      </button>
-    )}
-
-    {downloadAction === "pdf" && (
-      <button
-        onClick={() => {
-          setShowDownloadOptions(false);
-          handleGeneratePDF();
-        }}
-        className="download-confirm-btn"
-      >
-        Generate PDF
-      </button>
-    )}
-
-  </div>
-)}
-
-
-            {isDownloadingImages && (
-              <div className="download-progress-card">
-                <div className="progress-header">
-                  <span>
-                    {selectedSubcollectionId === "all"
-                      ? "Downloading Collection Images"
-                      : "Downloading Category Images"}
-                  </span>
-                  <span>{downloadProgress}%</span>
-                </div>
-
-                <div className="progress-bar">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${downloadProgress}%` }}
-                  />
-                </div>
-
-                <div className="progress-meta">
-                  {downloadStats.completed} / {downloadStats.total} images
-                </div>
-              </div>
+        {/* Premium compact product search and shopping controls */}
+        <section className={`product-controls dmart-toolbar ${isControlsVisible ? 'open' : ''}`}>
+          <div className="dmart-search-wrap">
+            <span className="dmart-search-icon" aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              placeholder="Search jewellery, designs, SKU or product code"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input dmart-search-input"
+              aria-label="Search all products"
+            />
+            {searchTerm && (
+              <button className="dmart-clear-search" onClick={() => setSearchTerm('')} aria-label="Clear search">
+                <FaTimes />
+              </button>
             )}
           </div>
 
-
-          {/* Sort by */}
-          <div className="filter-group">
-            <label htmlFor="sort-by">Sort by:</label>
+          <div className="dmart-toolbar-actions">
+            <label className="dmart-sort-label" htmlFor="sort-by">Sort</label>
             <select
               id="sort-by"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
+              aria-label="Sort products"
             >
-              <option value="default">Default (By Code)</option>
+              <option value="default">Recommended</option>
               <option value="price-asc">Price: Low to High</option>
               <option value="price-desc">Price: High to Low</option>
-              <option value="qty-asc">Qty: Low to High</option>
-<option value="qty-desc">Qty: High to Low</option>
+              <option value="qty-desc">Availability</option>
             </select>
+            <button
+              type="button"
+              className="dmart-download-trigger"
+              onClick={() => {
+                setDownloadAction("images");
+                setShowDownloadOptions((visible) => !visible);
+              }}
+              title="Download product images"
+            >
+              <FaDownload /> <span>Images</span>
+            </button>
           </div>
 
-          {/* Search Bar */}
-          <div className="search-group">
-            <input
-              type="text"
-              placeholder="Search by product code/name..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-          </div>
-        </div>
-        {/* END OF CONTROLS BLOCK */}
+          {showDownloadOptions && (
+            <div className="download-options dmart-download-options">
+              <div className="qty-range-inputs">
+                <label>Min stock</label>
+                <input type="number" value={minDownloadQty} onChange={(e) => setMinDownloadQty(e.target.value)} placeholder="0" />
+                <label>Max stock</label>
+                <input type="number" value={maxDownloadQty} onChange={(e) => setMaxDownloadQty(e.target.value)} placeholder="Any" />
+              </div>
+              <button
+                onClick={() => { setShowDownloadOptions(false); handleDownloadCollectionImagesDirect(); }}
+                className="download-confirm-btn"
+              >
+                Start download
+              </button>
+            </div>
+          )}
 
+          {isDownloadingImages && (
+            <div className="download-progress-card dmart-progress">
+              <div className="progress-header">
+                <span>Downloading product images</span><span>{downloadProgress}%</span>
+              </div>
+              <div className="progress-bar"><div className="progress-fill" style={{ width: `${downloadProgress}%` }} /></div>
+              <div className="progress-meta">{downloadStats.completed} / {downloadStats.total} images</div>
+            </div>
+          )}
+        </section>
         {/* PRODUCTS GRID */}
 {inStockProducts.length === 0 && !isLoadingProducts && !isFetchingMore ? (
     <div className="no-products-message">
 
-    {selectedSubcollectionId !== "all" ? (
-      <>
-        <h3>🚧 Out of Stock</h3>
-        <p>
-          This category is currently out of stock.
-        </p>
-        <p>
-          Please check back soon — we are restocking new products.
-        </p>
-      </>
-    ) : (
-      <p>
-        No products found for this selection.
-      </p>
-    )}
+    <div className="dmart-empty-icon">⌕</div>
+    <h3>{debouncedSearchTerm ? "No matching products" : "No products available right now"}</h3>
+    <p>{debouncedSearchTerm ? "Try another product name, brand, SKU or product code." : "Please check back soon."}</p>
 
   </div>
 ) : (
@@ -1280,7 +1174,9 @@ if (qty < minQty || qty > maxQty) {
                   key={`${product.id}-${product.subcollectionId || "all"}`}
                   product={{
                     ...product,
-                    tieredPricing
+                    additionalImages: product.additionalImages || product.images || [],
+                    tieredPricing: tieredPricing || product.tieredPricing || null,
+                    calculatedPrice: getProductPrice(product, subcollectionsMap, pricingKey),
                   }}
                   onIncrement={(productData) =>
                     handleAddToCart(productData, productData.variation)

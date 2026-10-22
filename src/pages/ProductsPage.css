@@ -897,3 +897,1174 @@ button.back-to-collections-icon {
 .view-cart-btn-overlay.w-100{
   width:auto !important;
 }
+
+/* ==========================================================
+   DMART-INSPIRED VALUE SHOPPING STOREFRONT
+   Overrides legacy controls without changing ProductCard logic
+========================================================== */
+:root {
+  --dmart-red: #e53935;
+  --dmart-green: #087b42;
+  --dmart-green-dark: #075f35;
+  --dmart-yellow: #ffdf35;
+  --dmart-ink: #202820;
+  --dmart-muted: #667168;
+  --dmart-border: #e2e8e3;
+  --dmart-surface: #ffffff;
+  --dmart-page: #f4f7f2;
+}
+
+body {
+  background: var(--dmart-page);
+  color: var(--dmart-ink);
+}
+
+.products-page-container {
+  max-width: 1600px;
+  padding: 0 24px 130px;
+  margin: 0 auto;
+  background: transparent;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dmart-store-header {
+  margin: 0 -24px 20px;
+  padding: 18px 24px 0;
+  color: #fff;
+  background: linear-gradient(120deg, var(--dmart-green-dark), var(--dmart-green));
+  box-shadow: 0 8px 24px rgba(7, 95, 53, .16);
+}
+
+.dmart-header-topline {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 72px;
+}
+
+.dmart-store-header .back-to-collections-icon {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  margin: 0;
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: none;
+}
+
+.dmart-store-header .back-to-collections-icon:hover {
+  background: rgba(255,255,255,.25);
+  transform: translateX(-2px);
+}
+
+.dmart-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dmart-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 14px;
+  background: var(--dmart-yellow);
+  color: var(--dmart-green-dark);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 950;
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,.08);
+}
+
+.dmart-eyebrow {
+  margin: 0 0 3px;
+  color: #d6f4df;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+}
+
+.dmart-brand-lockup h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 850;
+  line-height: 1.15;
+  letter-spacing: -.6px;
+}
+
+.dmart-header-cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  color: var(--dmart-green-dark);
+  background: #fff;
+  border: 0;
+  border-radius: 12px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(0,0,0,.12);
+}
+
+.dmart-header-cart b {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--dmart-red);
+  font-size: 12px;
+}
+
+.dmart-store-promise {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  padding: 13px 0 15px 60px;
+  color: #e7f7eb;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dmart-mobile-controls {
+  display: none;
+}
+
+.dmart-toolbar.product-controls {
+  position: sticky;
+  top: 8px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow: visible;
+  margin: 0 0 20px;
+  padding: 12px;
+  border: 1px solid var(--dmart-border);
+  border-radius: 16px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 6px 20px rgba(20, 52, 29, .07);
+  backdrop-filter: blur(12px);
+}
+
+.dmart-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 220px;
+}
+
+.dmart-search-icon {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-53%);
+  z-index: 1;
+  color: var(--dmart-green);
+  font-size: 30px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.dmart-toolbar .dmart-search-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 44px 0 48px;
+  border: 1px solid #d5e1d7;
+  border-radius: 12px;
+  outline: none;
+  color: var(--dmart-ink);
+  background: #f9fbf8;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.dmart-toolbar .dmart-search-input:focus {
+  border-color: var(--dmart-green);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(8,123,66,.1);
+}
+
+.dmart-clear-search {
+  position: absolute;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #657268;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.dmart-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dmart-sort-label {
+  color: var(--dmart-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dmart-toolbar-actions select {
+  height: 46px;
+  min-width: 150px;
+  padding: 0 30px 0 12px;
+  border: 1px solid var(--dmart-border);
+  border-radius: 10px;
+  color: var(--dmart-ink);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dmart-download-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid #d4e4d7;
+  border-radius: 10px;
+  background: #f2faf3;
+  color: var(--dmart-green-dark);
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dmart-download-trigger:hover {
+  background: #e2f5e6;
+}
+
+.dmart-download-options {
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+}
+
+.dmart-progress {
+  flex-basis: 100%;
+  max-width: none;
+}
+
+.products-grid.collections-grid,
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  padding: 4px 0 130px;
+}
+
+.products-grid .product-card {
+  min-width: 0;
+  height: 100%;
+  border: 1px solid #e4eae4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(28, 52, 32, .045);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.products-grid .product-card:hover {
+  transform: translateY(-3px);
+  border-color: #c4ddc9;
+  box-shadow: 0 10px 24px rgba(25, 69, 37, .11);
+}
+
+.products-grid .product-image-container {
+  overflow: hidden;
+  background: #fff;
+  border-radius: 13px 13px 0 0;
+}
+
+.products-grid .product-image {
+  display: block;
+  width: 100%;
+  height: 190px;
+  object-fit: contain;
+  padding: 10px;
+  background: #fff;
+}
+
+.progressive-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
+.products-grid .product-info {
+  padding: 12px 12px 8px;
+}
+
+.products-grid .product-title {
+  display: -webkit-box;
+  min-height: 38px;
+  overflow: hidden;
+  color: #26332a;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.products-grid .product-code {
+  margin: 5px 0 8px;
+  color: #78857a;
+  font-size: 10px;
+}
+
+.products-grid .product-price {
+  margin: 7px 0;
+  color: var(--dmart-green-dark);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.products-grid .stock-badge {
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: #087b42;
+  background: #e9f7ec;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.products-grid .product-quantity {
+  color: #6d786f;
+  font-size: 11px;
+}
+
+.products-grid .add-to-cart-btn {
+  width: calc(100% - 24px);
+  min-height: 40px;
+  margin: 4px 12px 12px;
+  border: 1px solid var(--dmart-green);
+  border-radius: 9px;
+  color: var(--dmart-green-dark);
+  background: #f1faf2;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease;
+}
+
+.products-grid .add-to-cart-btn:hover:not(:disabled) {
+  color: #fff;
+  background: var(--dmart-green);
+}
+
+.products-grid .quantity-controls {
+  margin: 4px 12px 12px;
+  border: 1px solid var(--dmart-green);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.products-grid .quantity-controls button {
+  color: #fff;
+  background: var(--dmart-green);
+}
+
+.dmart-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  color: var(--dmart-green);
+  background: #e6f5e9;
+  font-size: 42px;
+}
+
+.no-products-message {
+  padding: 70px 20px;
+  border: 1px dashed #c9d9cb;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.no-products-message h3 {
+  margin: 0 0 8px;
+  color: var(--dmart-ink);
+  font-size: 22px;
+}
+
+.no-products-message p {
+  color: var(--dmart-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 1250px) {
+  .products-grid.collections-grid,
+  .products-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .products-page-container {
+    padding: 0 14px 120px;
+  }
+
+  .dmart-store-header {
+    margin: 0 -14px 14px;
+    padding: 14px 14px 0;
+  }
+
+  .products-grid.collections-grid,
+  .products-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .products-grid .product-image {
+    height: 170px;
+  }
+
+  .dmart-toolbar.product-controls {
+    top: 6px;
+  }
+}
+
+@media (max-width: 600px) {
+  .products-page-container {
+    padding: 0 8px 110px;
+  }
+
+  .dmart-store-header {
+    margin: 0 -8px 10px;
+    padding: 12px 10px 0;
+  }
+
+  .dmart-header-topline {
+    gap: 9px;
+    min-height: 58px;
+  }
+
+  .dmart-store-header .back-to-collections-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    flex-basis: 34px;
+  }
+
+  .dmart-brand-lockup {
+    gap: 8px;
+  }
+
+  .dmart-brand-mark {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+    border-radius: 11px;
+    font-size: 24px;
+  }
+
+  .dmart-eyebrow {
+    font-size: 8px;
+    letter-spacing: .7px;
+  }
+
+  .dmart-brand-lockup h1 {
+    font-size: 18px;
+    letter-spacing: -.3px;
+  }
+
+  .dmart-header-cart {
+    gap: 5px;
+    padding: 8px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .dmart-header-cart span {
+    display: none;
+  }
+
+  .dmart-header-cart b {
+    min-width: 21px;
+    height: 21px;
+    font-size: 10px;
+  }
+
+  .dmart-store-promise {
+    gap: 7px 13px;
+    padding: 10px 0 12px 42px;
+    font-size: 10px;
+  }
+
+  .dmart-mobile-controls {
+    display: none;
+  }
+
+  .dmart-toolbar.product-controls {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+    margin: 0 0 10px;
+    padding: 9px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px rgba(20, 52, 29, .05);
+  }
+
+  .dmart-search-wrap {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dmart-toolbar .dmart-search-input {
+    height: 44px;
+    font-size: 12px;
+  }
+
+  .dmart-toolbar-actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+
+  .dmart-sort-label {
+    align-self: center;
+    font-size: 11px;
+  }
+
+  .dmart-toolbar-actions select {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    font-size: 11px;
+  }
+
+  .dmart-download-trigger {
+    height: 40px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .dmart-download-trigger span {
+    display: inline;
+  }
+
+  .products-grid.collections-grid,
+  .products-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 2px 0 115px;
+  }
+
+  .products-grid .product-card {
+    border-radius: 11px;
+  }
+
+  .products-grid .product-image-container {
+    border-radius: 10px 10px 0 0;
+  }
+
+  .products-grid .product-image {
+    height: 145px;
+    padding: 7px;
+  }
+
+  .products-grid .product-info {
+    padding: 8px 8px 5px;
+  }
+
+  .products-grid .product-title {
+    min-height: 34px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .products-grid .product-code {
+    margin: 4px 0 6px;
+    font-size: 9px;
+  }
+
+  .products-grid .product-price {
+    font-size: 15px;
+  }
+
+  .products-grid .stock-badge {
+    padding: 3px 4px;
+    font-size: 8px;
+  }
+
+  .products-grid .add-to-cart-btn {
+    width: calc(100% - 16px);
+    min-height: 36px;
+    margin: 3px 8px 8px;
+    font-size: 11px;
+  }
+
+  .products-grid .quantity-controls {
+    margin: 3px 8px 8px;
+  }
+
+  .dmart-download-options {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .view-cart-fixed-container {
+    left: 8px;
+    right: 8px;
+    bottom: 10px;
+  }
+
+  .view-cart-btn-overlay {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .products-grid .product-card,
+  .products-grid .add-to-cart-btn,
+  .back-to-collections-icon {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 991px) {
+  .dmart-toolbar.product-controls,
+  .dmart-toolbar.product-controls.open {
+    max-height: none;
+    min-height: 0;
+    opacity: 1;
+    overflow: visible;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+}
+@media (max-width: 600px) {
+  .dmart-toolbar.product-controls,
+  .dmart-toolbar.product-controls.open {
+    max-height: none;
+    opacity: 1;
+    overflow: visible;
+    padding: 9px;
+    margin-bottom: 10px;
+  }
+}
+
+
+/* ==========================================================
+   TANISHKA 2026 — PREMIUM IVORY / ANTIQUE GOLD / MAROON THEME
+   Scoped storefront refresh. Keeps existing component behavior.
+========================================================== */
+:root {
+  --dmart-green: #a76c25;
+  --dmart-green-dark: #65121d;
+  --dmart-red: #65121d;
+  --dmart-ink: #321713;
+  --dmart-muted: #806e61;
+  --dmart-border: rgba(167, 108, 37, .24);
+  --tan-ivory: #fffaf2;
+  --tan-gold: #c89b55;
+  --tan-gold-light: #e7cc96;
+  --tan-maroon: #65121d;
+  --tan-ink: #321713;
+  --tan-shadow: 0 16px 40px rgba(64, 25, 17, .075);
+  --tan-ease: cubic-bezier(.2,.8,.2,1);
+}
+
+.products-page-container {
+  position: relative;
+  max-width: 1600px;
+  margin-inline: auto;
+  padding: clamp(10px, 1.7vw, 24px) clamp(12px, 2.4vw, 34px) 130px;
+  color: var(--tan-ink);
+  background:
+    radial-gradient(ellipse at 6% 0%, rgba(200,155,85,.08), transparent 30%),
+    var(--tan-ivory);
+  animation: tan-page-enter .65s var(--tan-ease) both;
+}
+
+@keyframes tan-page-enter {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dmart-store-header {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 18px;
+  padding: clamp(15px, 2.1vw, 26px) clamp(14px, 2.1vw, 28px) 0;
+  border: 1px solid rgba(200,155,85,.3);
+  border-radius: 18px;
+  color: var(--tan-ivory);
+  background:
+    radial-gradient(ellipse at 90% 0%, rgba(231,204,150,.16), transparent 38%),
+    linear-gradient(125deg, #3b1118 0%, #65121d 52%, #7a2630 100%);
+  box-shadow: 0 12px 32px rgba(65, 17, 25, .13);
+  isolation: isolate;
+}
+
+.dmart-store-header::before,
+.dmart-store-header::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+}
+
+.dmart-store-header::before {
+  width: 250px;
+  height: 250px;
+  right: -85px;
+  top: -155px;
+  border: 1px solid rgba(231,204,150,.27);
+  border-radius: 50%;
+  box-shadow: 0 0 0 18px rgba(231,204,150,.035), 0 0 0 38px rgba(231,204,150,.025);
+  animation: tan-orbit 18s linear infinite;
+}
+
+.dmart-store-header::after {
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--tan-gold-light), transparent);
+  opacity: .8;
+}
+
+@keyframes tan-orbit { to { transform: rotate(360deg); } }
+
+.dmart-header-topline {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 54px;
+}
+
+.dmart-store-header .back-to-collections-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(231,204,150,.4);
+  border-radius: 12px;
+  color: var(--tan-gold-light);
+  background: rgba(255,250,242,.07);
+  transition: transform .25s var(--tan-ease), background .25s ease, color .25s ease;
+}
+
+.dmart-store-header .back-to-collections-icon:hover {
+  transform: translateX(-3px);
+  color: var(--tan-maroon);
+  background: var(--tan-gold-light);
+}
+
+.dmart-brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+.dmart-brand-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(231,204,150,.82);
+  border-radius: 50%;
+  color: var(--tan-gold-light);
+  background: linear-gradient(145deg, rgba(255,250,242,.12), rgba(255,250,242,.025));
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-style: italic;
+  box-shadow: inset 0 0 0 4px rgba(231,204,150,.045);
+}
+
+.dmart-eyebrow {
+  margin: 0 0 4px;
+  color: var(--tan-gold-light);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  line-height: 1.4;
+}
+
+.dmart-brand-lockup h1 {
+  margin: 0;
+  color: var(--tan-ivory);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(22px, 2.2vw, 32px);
+  font-weight: 500;
+  letter-spacing: -.45px;
+  line-height: 1.15;
+}
+
+.dmart-header-cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-left: auto;
+  padding: 11px 15px;
+  border: 1px solid rgba(231,204,150,.5);
+  border-radius: 999px;
+  color: var(--tan-ivory);
+  background: rgba(255,250,242,.08);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 750;
+  transition: background .25s ease, transform .25s var(--tan-ease);
+}
+
+.dmart-header-cart:hover { transform: translateY(-2px); background: rgba(255,250,242,.15); }
+
+.dmart-header-cart b {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 50%;
+  color: var(--tan-maroon);
+  background: var(--tan-gold-light);
+  font-size: 11px;
+}
+
+.dmart-store-promise {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px clamp(14px, 2.5vw, 34px);
+  margin-top: 16px;
+  padding: 13px 0 15px 57px;
+  color: #f5e7d0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .15px;
+}
+
+.dmart-store-promise span { animation: tan-promise-in .55s both; }
+.dmart-store-promise span:nth-child(2) { animation-delay: .08s; }
+.dmart-store-promise span:nth-child(3) { animation-delay: .16s; }
+@keyframes tan-promise-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+.dmart-toolbar.product-controls {
+  position: sticky;
+  top: 8px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 10px;
+  border: 1px solid rgba(167,108,37,.24);
+  border-radius: 15px;
+  background: rgba(255,250,242,.94);
+  box-shadow: 0 8px 24px rgba(58,22,16,.065);
+  backdrop-filter: blur(18px);
+  transition: box-shadow .25s ease, border-color .25s ease;
+}
+
+.dmart-toolbar.product-controls:focus-within {
+  border-color: rgba(167,108,37,.55);
+  box-shadow: 0 10px 28px rgba(58,22,16,.09), 0 0 0 3px rgba(200,155,85,.09);
+}
+
+.dmart-search-wrap { min-width: 180px; }
+
+.dmart-search-icon {
+  left: 15px;
+  color: var(--tan-maroon);
+  font-family: Georgia, serif;
+  font-size: 29px;
+}
+
+.dmart-toolbar .dmart-search-input {
+  height: 46px;
+  padding-left: 45px;
+  border: 1px solid rgba(167,108,37,.2);
+  border-radius: 11px;
+  color: var(--tan-ink);
+  background: #fffdf9;
+  font-size: 13px;
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+
+.dmart-toolbar .dmart-search-input::placeholder { color: #9a887a; }
+.dmart-toolbar .dmart-search-input:focus {
+  border-color: var(--tan-gold);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(200,155,85,.14);
+}
+
+.dmart-clear-search {
+  color: #806e61;
+  transition: color .2s ease, background .2s ease;
+}
+.dmart-clear-search:hover { color: var(--tan-maroon); background: #f4e7d5; }
+
+.dmart-sort-label {
+  color: #806e61;
+  font-size: 10px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+
+.dmart-toolbar-actions select {
+  height: 44px;
+  border: 1px solid rgba(167,108,37,.25);
+  border-radius: 10px;
+  color: var(--tan-maroon);
+  background: #fffdf9;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+}
+.dmart-toolbar-actions select:focus { border-color: var(--tan-gold); box-shadow: 0 0 0 3px rgba(200,155,85,.12); }
+
+.dmart-download-trigger {
+  height: 44px;
+  border: 1px solid rgba(167,108,37,.34);
+  border-radius: 10px;
+  color: var(--tan-maroon);
+  background: linear-gradient(135deg, #fffaf2, #f4e6d0);
+  font-size: 11px;
+  transition: transform .2s var(--tan-ease), box-shadow .2s ease, background .2s ease;
+}
+.dmart-download-trigger:hover { transform: translateY(-1px); background: #f1dfc3; box-shadow: 0 5px 14px rgba(101,18,29,.08); }
+
+.products-grid.collections-grid,
+.products-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(9px, 1.1vw, 16px);
+  padding: 3px 0 130px;
+}
+
+.products-grid .product-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(167,108,37,.19);
+  border-radius: 13px;
+  background: linear-gradient(180deg, #fffdf9 0%, #fffaf2 100%);
+  box-shadow: 0 3px 13px rgba(50,23,19,.035);
+  transition: transform .35s var(--tan-ease), box-shadow .35s var(--tan-ease), border-color .35s ease;
+  animation: tan-card-in .5s var(--tan-ease) both;
+}
+.products-grid .product-card:nth-child(3n + 2) { animation-delay: .035s; }
+.products-grid .product-card:nth-child(3n + 3) { animation-delay: .07s; }
+@keyframes tan-card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.products-grid .product-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(167,108,37,.48);
+  box-shadow: 0 14px 28px rgba(50,23,19,.09);
+}
+
+.products-grid .product-image-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  background:
+    radial-gradient(circle at 50% 45%, #fff 0%, #fffaf2 68%, #f4e8d5 100%);
+}
+.products-grid .product-image {
+  height: clamp(140px, 15vw, 205px);
+  padding: 11px;
+  object-fit: contain;
+  transition: transform .65s var(--tan-ease), filter .4s ease;
+}
+.products-grid .product-card:hover .product-image { transform: scale(1.045); filter: saturate(1.04); }
+.progressive-img { background: #fffaf2; }
+
+.products-grid .product-info { padding: 11px 11px 8px; }
+.products-grid .product-title {
+  color: var(--tan-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: -.08px;
+}
+.products-grid .product-code {
+  color: #978477;
+  font-size: 9px;
+  letter-spacing: .25px;
+}
+.products-grid .product-price {
+  color: var(--tan-maroon);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(16px, 1.4vw, 20px);
+  font-weight: 700;
+}
+.products-grid .stock-badge {
+  border: 1px solid rgba(167,108,37,.2);
+  border-radius: 5px;
+  color: #6e4a1f;
+  background: #f7ecd9;
+  font-size: 9px;
+}
+.products-grid .product-quantity { color: #8c796b; font-size: 10px; }
+
+.products-grid .add-to-cart-btn {
+  min-height: 38px;
+  border: 1px solid var(--tan-maroon);
+  border-radius: 8px;
+  color: var(--tan-ivory);
+  background: linear-gradient(115deg, #65121d, #7c2932);
+  font-size: 11px;
+  letter-spacing: .15px;
+  transition: transform .2s var(--tan-ease), box-shadow .2s ease, background .2s ease;
+}
+.products-grid .add-to-cart-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  color: #fffaf2;
+  background: linear-gradient(115deg, #4d0d16, #65121d);
+  box-shadow: 0 6px 15px rgba(101,18,29,.2);
+}
+.products-grid .add-to-cart-btn:active:not(:disabled) { transform: scale(.98); }
+
+.products-grid .quantity-controls {
+  border-color: rgba(167,108,37,.4);
+  border-radius: 8px;
+  background: #fffaf2;
+}
+.products-grid .quantity-controls button { color: #fffaf2; background: var(--tan-maroon); }
+
+.dmart-empty-icon {
+  color: var(--tan-maroon);
+  background: #f4e6d0;
+  box-shadow: inset 0 0 0 1px rgba(167,108,37,.2);
+}
+.no-products-message {
+  border: 1px dashed rgba(167,108,37,.42);
+  border-radius: 18px;
+  background: rgba(255,250,242,.8);
+}
+.no-products-message h3 { color: var(--tan-maroon); }
+.no-products-message p { color: var(--tan-muted, #806e61); }
+
+.view-cart-btn-overlay {
+  border: 1px solid rgba(231,204,150,.75) !important;
+  border-radius: 13px !important;
+  color: #fffaf2 !important;
+  background: linear-gradient(120deg, #4a101b, #751e2a) !important;
+  box-shadow: 0 10px 30px rgba(65,17,25,.24) !important;
+  transition: transform .25s var(--tan-ease), box-shadow .25s ease !important;
+}
+.view-cart-btn-overlay:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(65,17,25,.3) !important; }
+
+@media (max-width: 1250px) {
+  .products-grid.collections-grid, .products-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .products-page-container { padding-inline: 14px; }
+  .products-grid.collections-grid, .products-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .products-grid .product-image { height: clamp(145px, 22vw, 180px); }
+}
+@media (max-width: 600px) {
+  .products-page-container { padding: 0 9px 115px; }
+  .dmart-store-header {
+    margin: 0 -9px 12px;
+    padding: 13px 11px 0;
+    border-radius: 0 0 16px 16px;
+  }
+  .dmart-header-topline { gap: 8px; min-height: 48px; }
+  .dmart-store-header .back-to-collections-icon { width: 33px; height: 33px; flex-basis: 33px; border-radius: 10px; }
+  .dmart-brand-lockup { gap: 8px; }
+  .dmart-brand-mark { width: 36px; height: 36px; flex-basis: 36px; font-size: 23px; }
+  .dmart-eyebrow { font-size: 7px; letter-spacing: .95px; }
+  .dmart-brand-lockup h1 { font-size: 17px; }
+  .dmart-header-cart { gap: 5px; padding: 7px 8px; font-size: 11px; }
+  .dmart-header-cart span { display: none; }
+  .dmart-header-cart b { min-width: 20px; height: 20px; font-size: 10px; }
+  .dmart-store-promise { gap: 7px 12px; padding: 10px 0 12px 41px; font-size: 9px; }
+  .dmart-toolbar.product-controls { position: static; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 10px; padding: 8px; border-radius: 12px; }
+  .dmart-toolbar .dmart-search-input { height: 42px; font-size: 11px; }
+  .dmart-toolbar-actions { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; }
+  .dmart-sort-label { font-size: 9px; letter-spacing: .4px; }
+  .dmart-toolbar-actions select, .dmart-download-trigger { height: 38px; font-size: 10px; }
+  .dmart-download-trigger { gap: 5px; padding-inline: 8px; }
+  .products-grid.collections-grid, .products-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 2px 0 112px; }
+  .products-grid .product-card { border-radius: 10px; }
+  .products-grid .product-image-container { border-radius: 9px 9px 0 0; }
+  .products-grid .product-image { height: clamp(126px, 39vw, 168px); padding: 6px; }
+  .products-grid .product-info { padding: 8px 8px 5px; }
+  .products-grid .product-title { min-height: 32px; font-size: 10.5px; }
+  .products-grid .product-code { margin: 4px 0 5px; font-size: 8px; }
+  .products-grid .product-price { font-size: 16px; }
+  .products-grid .stock-badge { padding: 3px 4px; font-size: 8px; }
+  .products-grid .add-to-cart-btn { width: calc(100% - 14px); min-height: 34px; margin: 3px 7px 7px; font-size: 10px; }
+  .products-grid .quantity-controls { margin: 3px 7px 7px; }
+  .view-cart-fixed-container { left: 8px; right: 8px; bottom: 9px; }
+  .view-cart-btn-overlay { width: 100%; min-width: 0; padding: 10px 12px; }
+}
+@media (max-width: 360px) {
+  .dmart-eyebrow { font-size: 6.5px; letter-spacing: .6px; }
+  .dmart-brand-lockup h1 { font-size: 15px; }
+  .dmart-store-promise { padding-left: 0; gap: 6px 9px; }
+  .products-grid .product-title { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .products-page-container, .dmart-store-header::before, .dmart-store-promise span,
+  .products-grid .product-card, .products-grid .product-image,
+  .products-grid .add-to-cart-btn, .dmart-store-header .back-to-collections-icon {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Tanishka compact product media fix: remove oversized image panel whitespace */
+.products-grid .product-image-container {
+  height: 218px !important;
+  min-height: 0 !important;
+  max-height: 218px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 10px !important;
+  box-sizing: border-box !important;
+}
+.products-grid .product-image-container .product-image,
+.products-grid .product-image-container img.product-image,
+.products-grid .product-image-container .progressive-img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  padding: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  flex: 1 1 auto !important;
+}
+@media (max-width: 1250px) {
+  .products-grid .product-image-container { height: 198px !important; max-height: 198px !important; }
+}
+@media (max-width: 900px) {
+  .products-grid .product-image-container { height: 178px !important; max-height: 178px !important; padding: 8px !important; }
+}
+@media (max-width: 600px) {
+  .products-grid .product-image-container { height: clamp(132px, 38vw, 164px) !important; max-height: clamp(132px, 38vw, 164px) !important; padding: 7px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .products-grid .product-card { animation: none !important; }
+}
