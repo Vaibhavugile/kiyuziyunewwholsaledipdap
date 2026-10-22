@@ -115,6 +115,47 @@ const getDeoDapRecordCode = (record) => {
   return getDeoDapCodeFromSku(inventoryName);
 };
 
+// Compress scraped product images in-browser before uploading. Images are resized
+// to at most 1000px and encoded as WebP to reduce Firebase Storage usage/bandwidth.
+const compressProductImage = async (file, maxDimension = 1000, quality = 0.72) => {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('Could not create image compression canvas.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        result => result ? resolve(result) : reject(new Error('Image compression failed.')),
+        'image/webp',
+        quality
+      );
+    });
+    return blob;
+  } finally {
+    bitmap.close?.();
+  }
+};
+
+const formatFileSize = (bytes = 0) => {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const safeStorageSegment = (value) => String(value || 'unknown')
+  .trim()
+  .replace(/[\\#?%:*"<>|]/g, '-')
+  .replace(/\s+/g, '-')
+  .slice(0, 120);
+
 const AdminPage = () => {
   // State for Main Collections
   const [mainCollections, setMainCollections] = useState([]);
@@ -190,6 +231,10 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   const [deodapBulkConnecting, setDeodapBulkConnecting] = useState(false);
   const [deodapConnectionStatus, setDeodapConnectionStatus] = useState({});
   const [deodapConnectionReport, setDeodapConnectionReport] = useState(null);
+  const [deodapImageUploading, setDeodapImageUploading] = useState(false);
+  const [deodapImageProgress, setDeodapImageProgress] = useState({ current: 0, total: 0, uploaded: 0, matched: 0, failed: 0, skipped: 0, currentSku: '' });
+  const [deodapImageFolderName, setDeodapImageFolderName] = useState('');
+  const [deodapImageSizeReport, setDeodapImageSizeReport] = useState({ originalBytes: 0, compressedBytes: 0, imageCount: 0, compressedCount: 0 });
   const [deodapFields, setDeodapFields] = useState({
     sku: '', tags: '', compareAtPrice: '', discountPercentage: '', vendor: '',
     productType: '', descriptionHtml: '', descriptionText: '', keyFeatures: '', faqs: '[]',
@@ -2361,6 +2406,180 @@ for (const product of newProducts) {
       alert('Could not read the selected output folder. Please select the scraper output folder again.');
     } finally {
       setDeodapFolderLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleDeodapBulkImagesUpload = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const imageFiles = files.filter(file => /^image\/(jpeg|png|webp|avif)$/i.test(file.type) || /\.(jpe?g|png|webp|avif)$/i.test(file.name));
+    const jsonFiles = files.filter(file => /(^|\/)product\.json$/i.test(file.webkitRelativePath || file.name));
+    if (!imageFiles.length) {
+      alert('No product images were found. Choose the scraper output folder containing products/<SKU>/images/.');
+      event.target.value = '';
+      return;
+    }
+    if (!allCollectionProducts.length || !selectedMainCollectionId) {
+      alert('First select the collection and load its existing products, then choose the scraper output folder.');
+      event.target.value = '';
+      return;
+    }
+    if (!window.confirm(`Process ${imageFiles.length} image file(s) from the selected folder?\n\nImages will be compressed to WebP (maximum 1000px, quality 72%), uploaded to Firebase Storage, and the matching existing product records will be updated. Existing product image fields will be replaced for matched products. Continue?`)) {
+      event.target.value = '';
+      return;
+    }
+
+    setDeodapImageUploading(true);
+    setDeodapImageFolderName(files[0]?.webkitRelativePath?.split('/')[0] || 'Selected folder');
+    const originalBytes = imageFiles.reduce((total, file) => total + (Number(file.size) || 0), 0);
+    setDeodapImageSizeReport({ originalBytes, compressedBytes: 0, imageCount: imageFiles.length, compressedCount: 0 });
+    const progress = { current: 0, total: imageFiles.length, uploaded: 0, matched: 0, failed: 0, skipped: 0, currentSku: '' };
+    setDeodapImageProgress(progress);
+
+    try {
+      const pathPartsFor = (file) => (file.webkitRelativePath || file.name).split('/').filter(Boolean);
+      const productFolderFor = (file) => {
+        const parts = pathPartsFor(file);
+        const productsIndex = parts.findIndex(part => part.toLowerCase() === 'products');
+        if (productsIndex >= 0 && parts[productsIndex + 1]) return parts[productsIndex + 1];
+        const imagesIndex = parts.findIndex(part => part.toLowerCase() === 'images');
+        if (imagesIndex > 0) return parts[imagesIndex - 1];
+        return parts.length > 1 ? parts[parts.length - 2] : '';
+      };
+
+      const productGroups = new Map();
+      imageFiles.forEach(file => {
+        const folder = productFolderFor(file);
+        if (!folder) return;
+        if (!productGroups.has(folder)) productGroups.set(folder, []);
+        productGroups.get(folder).push(file);
+      });
+      const metadataByFolder = new Map();
+      for (const file of jsonFiles) {
+        const parts = pathPartsFor(file);
+        const folder = productFolderFor(file);
+        if (folder && /(^|\/)product\.json$/i.test(file.webkitRelativePath || file.name)) {
+          try { metadataByFolder.set(folder, JSON.parse(await file.text())); } catch (error) {
+            console.warn('Could not parse product metadata:', file.webkitRelativePath || file.name, error);
+          }
+        }
+      }
+
+      const getProductSkuCandidates = (product) => [
+        product?.sku,
+        product?.inventoryRow?.sku,
+        product?.inventory_name,
+        product?.inventoryName,
+      ].map(value => String(value ?? '').trim()).filter(Boolean);
+      const matchedProductIds = new Set();
+      const failures = [];
+      let imageIndex = 0;
+
+      for (const [folder, groupFiles] of productGroups.entries()) {
+        const metadata = metadataByFolder.get(folder) || {};
+        const skuCandidates = [
+          metadata.sku,
+          metadata.inventoryRow?.sku,
+          ...(Array.isArray(metadata.variants) ? metadata.variants.map(item => item?.sku) : []),
+          ...(Array.isArray(metadata.variant_details) ? metadata.variant_details.map(item => item?.sku) : []),
+          folder,
+        ].map(value => String(value ?? '').trim()).filter(Boolean);
+        const normalizedCandidates = new Set(skuCandidates.map(normalizeProductCode));
+        const codeCandidates = new Set(skuCandidates.map(getDeoDapCodeFromSku).filter(Boolean).map(normalizeProductCode));
+
+        let matches = allCollectionProducts.filter(product => {
+          const exactValues = getProductSkuCandidates(product).concat([product?.productCode])
+            .map(normalizeProductCode).filter(Boolean);
+          if (exactValues.some(value => normalizedCandidates.has(value))) return true;
+          const productCodeValue = normalizeProductCode(product?.productCode || getDeoDapCodeFromSku(product?.sku));
+          return productCodeValue && codeCandidates.has(productCodeValue);
+        });
+
+        if (matches.length !== 1) {
+          progress.skipped += groupFiles.length;
+          progress.current = Math.min(imageIndex + groupFiles.length, progress.total);
+          setDeodapImageProgress({ ...progress, currentSku: folder });
+          imageIndex += groupFiles.length;
+          if (matches.length > 1) failures.push(`${folder}: ambiguous match (${matches.length} products)`);
+          else failures.push(`${folder}: no matching product SKU/code`);
+          continue;
+        }
+
+        const product = matches[0];
+        const matchId = `${product.destination || 'products'}:${product.id}`;
+        if (matchedProductIds.has(matchId)) {
+          progress.skipped += groupFiles.length;
+          failures.push(`${folder}: another folder already matched this product`);
+          imageIndex += groupFiles.length;
+          continue;
+        }
+
+        const subId = product.subcollectionId || selectedSubcollectionId;
+        if (!selectedMainCollectionId || !subId || !product.id) {
+          progress.skipped += groupFiles.length;
+          failures.push(`${folder}: product has no valid collection path`);
+          imageIndex += groupFiles.length;
+          continue;
+        }
+
+        const sortedFiles = [...groupFiles].sort((a, b) => {
+          const numA = Number((a.name.match(/image[_-]?(\d+)/i) || [])[1] || 9999);
+          const numB = Number((b.name.match(/image[_-]?(\d+)/i) || [])[1] || 9999);
+          return numA - numB || a.name.localeCompare(b.name);
+        });
+        const uploadedUrls = [];
+        const storageSku = safeStorageSegment(skuCandidates[0] || folder);
+        for (const file of sortedFiles) {
+          progress.currentSku = skuCandidates[0] || folder;
+          setDeodapImageProgress({ ...progress, current: imageIndex, currentSku: progress.currentSku });
+          try {
+            const compressedBlob = await compressProductImage(file);
+            setDeodapImageSizeReport(previous => ({ ...previous, compressedBytes: previous.compressedBytes + compressedBlob.size, compressedCount: previous.compressedCount + 1 }));
+            const baseName = safeStorageSegment(file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '-')) || `image-${uploadedUrls.length + 1}`;
+            const imageRef = ref(storage, `deodap-product-images/${storageSku}/${baseName}.webp`);
+            const snapshot = await uploadBytes(imageRef, compressedBlob, { contentType: 'image/webp', cacheControl: 'public,max-age=31536000,immutable' });
+            uploadedUrls.push(await getDownloadURL(snapshot.ref));
+            progress.uploaded += 1;
+          } catch (error) {
+            console.error(`Image upload failed for ${folder}/${file.name}`, error);
+            progress.failed += 1;
+            failures.push(`${folder}/${file.name}: ${error.message || 'upload failed'}`);
+          } finally {
+            imageIndex += 1;
+            progress.current = imageIndex;
+            setDeodapImageProgress({ ...progress });
+          }
+        }
+
+        if (uploadedUrls.length) {
+          try {
+            const productRef = doc(db, 'collections', selectedMainCollectionId, 'subcollections', subId, product.destination || 'products', product.id);
+            await updateDoc(productRef, {
+              image: uploadedUrls[0],
+              imageUrl: uploadedUrls[0],
+              imageUrls: uploadedUrls,
+              updatedAt: serverTimestamp(),
+            });
+            matchedProductIds.add(matchId);
+            progress.matched += 1;
+          } catch (error) {
+            progress.failed += 1;
+            failures.push(`${folder}: uploaded, but Firestore save failed: ${error.message || 'unknown error'}`);
+          }
+        }
+        setDeodapImageProgress({ ...progress, current: imageIndex, currentSku: progress.currentSku });
+      }
+
+      const summary = `Bulk image import finished.\n\nProducts updated: ${progress.matched}\nImages uploaded: ${progress.uploaded}\nImage upload/save failures: ${progress.failed}\nImages skipped: ${progress.skipped}`;
+      alert(`${summary}${failures.length ? `\n\nFirst issues:\n${failures.slice(0, 12).join('\n')}${failures.length > 12 ? `\n...and ${failures.length - 12} more` : ''}` : ''}`);
+      await fetchAllCollectionProducts(selectedMainCollectionId);
+    } catch (error) {
+      console.error('Bulk DeoDap image upload failed:', error);
+      alert(`Bulk image upload failed: ${error.message || 'Please check the console.'}`);
+    } finally {
+      setDeodapImageUploading(false);
       event.target.value = '';
     }
   };
@@ -5557,6 +5776,52 @@ alert(
                         {deodapBulkConnecting ? 'Connecting matched products…' : `Connect & update all matched products (${allCollectionProducts.filter(product => { const key = normalizeProductCode(product.productCode); return key && deodapScrapedCatalog.filter(item => normalizeProductCode(getDeoDapRecordCode(item)) === key).length === 1; }).length})`}
                       </button>
                       <span>Unique code/SKU matches connect automatically. Ambiguous and unmatched products are skipped and reported.</span>
+                    </div>
+                  </div>
+                  <div className="admin-section deodap-folder-sync-panel" style={{ marginTop: 16 }}>
+                    <div className="deodap-folder-sync-heading">
+                      <div>
+                        <span className="deodap-eyebrow">BULK PRODUCT IMAGES</span>
+                        <h3>Upload compressed images by SKU</h3>
+                        <p>Select the scraper output folder. Images are compressed in the browser to WebP (maximum 1000px, quality 72%), uploaded to Firebase Storage, and saved to the matching product record. The first image becomes the main image; all successfully uploaded images are saved in imageUrls.</p>
+                      </div>
+                      <label className="deodap-folder-upload-button" style={{ opacity: deodapImageUploading ? 0.65 : 1 }}>
+                        <span>{deodapImageUploading ? `Compressing & uploading ${deodapImageProgress.current}/${deodapImageProgress.total}` : 'Choose images output folder'}</span>
+                        <input
+                          type="file"
+                          webkitdirectory=""
+                          directory=""
+                          multiple
+                          accept="image/*,.json,application/json"
+                          onChange={handleDeodapBulkImagesUpload}
+                          disabled={deodapImageUploading}
+                        />
+                      </label>
+                    </div>
+                    {deodapImageFolderName && <p style={{ margin: '8px 0' }}>Selected folder: <strong>{deodapImageFolderName}</strong></p>}
+                    {deodapImageUploading && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ height: 8, background: '#e5e7eb', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${deodapImageProgress.total ? Math.min(100, (deodapImageProgress.current / deodapImageProgress.total) * 100) : 0}%`, background: '#16a34a', transition: 'width 180ms ease' }} />
+                        </div>
+                        <div className="deodap-folder-sync-stats" style={{ marginTop: 8 }}>
+                          <span>Current SKU/folder: <strong>{deodapImageProgress.currentSku || 'Preparing…'}</strong></span>
+                          <span>Images processed: <strong>{deodapImageProgress.current}/{deodapImageProgress.total}</strong></span>
+                          <span>Uploaded: <strong>{deodapImageProgress.uploaded}</strong></span>
+                          <span>Products saved: <strong>{deodapImageProgress.matched}</strong></span>
+                          <span>Failed: <strong>{deodapImageProgress.failed}</strong></span>
+                          <span>Skipped: <strong>{deodapImageProgress.skipped}</strong></span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="deodap-folder-sync-stats">
+                      <span>Compression: <strong>WebP · 1000px max · 72% quality</strong></span>
+                      <span>Images found: <strong>{deodapImageSizeReport.imageCount.toLocaleString()}</strong></span>
+                      <span>Original total size: <strong>{formatFileSize(deodapImageSizeReport.originalBytes)}</strong></span>
+                      <span>Compressed size so far: <strong>{formatFileSize(deodapImageSizeReport.compressedBytes)}</strong>{deodapImageSizeReport.compressedCount ? ` (${deodapImageSizeReport.compressedCount}/${deodapImageSizeReport.imageCount} processed)` : ' (shown during upload)'}</span>
+                      {deodapImageSizeReport.compressedBytes > 0 && <span>Space saved so far: <strong>{formatFileSize(Math.max(0, deodapImageSizeReport.originalBytes - deodapImageSizeReport.compressedBytes))} ({Math.max(0, Math.round((1 - deodapImageSizeReport.compressedBytes / Math.max(1, deodapImageSizeReport.originalBytes)) * 100))}%)</strong></span>}
+                      <span>Firebase Storage path: <strong>deodap-product-images/SKU/</strong></span>
+                      <span>Unmatched SKUs: <strong>skipped and reported</strong></span>
                     </div>
                   </div>
                   <div className="admin-section">
