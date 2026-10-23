@@ -71,6 +71,16 @@ function productDetailsUrl(product) {
   return `/product/${slugify(product.productName || product.title || product.name)}/${encodeURIComponent(collectionId)}/${encodeURIComponent(subcollectionId)}/${encodeURIComponent(productId)}`;
 }
 
+const BUDGET_TILES = [
+  { id: 'under-9', title: 'Under ₹9', subtitle: 'Little prices, useful finds.' },
+  { id: 'under-49', title: 'Under ₹49', subtitle: 'Everyday favourites.' },
+  { id: 'under-99', title: 'Under ₹99', subtitle: 'More choices for less.' },
+  { id: 'under-199', title: 'Under ₹199', subtitle: 'Smart shopping picks.' },
+  { id: 'under-299', title: 'Under ₹299', subtitle: 'Something to love.' },
+  { id: 'under-499', title: 'Under ₹499', subtitle: 'Great finds, friendly prices.' },
+  { id: 'under-999', title: 'Under ₹999', subtitle: 'Explore premium picks.' },
+];
+
 function SectionHeading({ section, onViewAll }) {
   return (
     <div className="tanishka-home-section__heading">
@@ -229,11 +239,38 @@ export default function HomepageSections({
   return (
     <div className="tanishka-home-sections">
       {error && <div className="tanishka-home-sections__notice" role="status">{error}</div>}
+      <section className="tanishka-budget-section" aria-labelledby="tanishka-budget-heading">
+        <div className="tanishka-budget-section__heading">
+          <span className="tanishka-home-section__eyebrow">SHOP BY BUDGET</span>
+          <h2 id="tanishka-budget-heading">Stylish Finds for Every Budget</h2>
+          <p>Explore products from across our catalogue at prices you will love.</p>
+        </div>
+        <div className="tanishka-budget-tiles">
+          {BUDGET_TILES.map((tile) => {
+            const section = activeSections.find((item) => item.id === tile.id);
+            const productsForTile = sectionProducts[tile.id] || [];
+            const imageProduct = productsForTile.find((product) => productImage(product));
+            const image = imageProduct ? productImage(imageProduct) : '';
+            return (
+              <button key={tile.id} type="button" className="tanishka-budget-tile" onClick={() => {
+                const target = document.getElementById(`homepage-section-${tile.id}`);
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }} aria-label={`Explore ${tile.title} products`}>
+                <span className="tanishka-budget-tile__image">
+                  {image ? <img src={image} alt={imageProduct?.productName || imageProduct?.name || tile.title} loading="lazy" /> : <span aria-hidden="true">✦</span>}
+                </span>
+                <span className="tanishka-budget-tile__copy"><strong>{tile.title}</strong><small>{tile.subtitle}</small></span>
+                <span className="tanishka-budget-tile__arrow" aria-hidden="true">↗</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
       {activeSections.map((section) => {
         const items = sectionProducts[section.id] || [];
         if (!items.length && section.hideWhenEmpty !== false) return null;
         return (
-          <section key={section.id} className={`tanishka-home-section is-${section.accent || 'gold'}`}>
+          <section id={`homepage-section-${section.id}`} key={section.id} className={`tanishka-home-section is-${section.accent || 'gold'}`}>
             <SectionHeading section={section} onViewAll={() => goToSectionListing(section)} />
             {items.length ? (
               <>

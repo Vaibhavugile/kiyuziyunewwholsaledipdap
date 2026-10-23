@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase.js";
 import {
   FiMenu,
   FiX,
@@ -10,21 +12,8 @@ import {
   FiChevronDown,
 } from "react-icons/fi";
 import MiniCart from "./MiniCart";
-import logo from "../assets/logoj.png";
 import "./Navbar.css";
 import { useAuth } from "./AuthContext";
-
-const categories = [
-  "Necklaces",
-  "Earrings",
-  "Bangles",
-  "Bridal Sets",
-  "Rings",
-  "Mangalsutra",
-  "Chains",
-  "New Arrivals",
-  "Best Sellers",
-];
 
 export default function Navbar() {
   const { currentUser, userRole, logout } = useAuth();
@@ -33,8 +22,84 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const profileRef = useRef(null);
   const mobileMenuRef = useRef(null);
+
+  // Read the category records prepared in settings/productCategories.
+  // Navbar only displays the saved data; it does not scan products or write to Firestore.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSavedCategories = async () => {
+      setCategoriesLoading(true);
+
+      try {
+        const categoriesRef = doc(db, "settings", "productCategories");
+        const snapshot = await getDoc(categoriesRef);
+        const savedCategories = snapshot.exists()
+          ? snapshot.data()?.categories
+          : [];
+
+        const normalized = Array.isArray(savedCategories)
+          ? savedCategories
+              .filter((item) => item && item.isActive !== false)
+              .map((item) => {
+                // Support both the newer collection-like objects and older string entries.
+                if (typeof item === "string") {
+                  const title = item.trim();
+                  return title ? { id: title.toLowerCase(), title, name: title } : null;
+                }
+
+                const title = String(item.title || item.name || item.category || "").trim();
+                if (!title) return null;
+
+                return {
+                  ...item,
+                  id: item.id || item.categoryId || item.categorySlug || item.slug || title.toLowerCase(),
+                  title,
+                  name: item.name || title,
+                  category: item.category || title,
+                  image: item.image || item.imageUrl || "",
+                  imageUrl: item.imageUrl || item.image || "",
+                  additionalImages: Array.isArray(item.additionalImages)
+                    ? item.additionalImages
+                    : [],
+                };
+              })
+              .filter(Boolean)
+          : [];
+
+        // De-duplicate by normalized title while retaining the full saved category object.
+        const unique = [
+          ...new Map(
+            normalized.map((item) => [
+              String(item.title).trim().toLocaleLowerCase(),
+              item,
+            ])
+          ).values(),
+        ].sort(
+          (a, b) =>
+            (Number(a.showNumber) || 999999) - (Number(b.showNumber) || 999999) ||
+            a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
+        );
+
+        if (!cancelled) setCategories(unique);
+      } catch (error) {
+        console.error("Failed to load categories from settings/productCategories:", error);
+        if (!cancelled) setCategories([]);
+      } finally {
+        if (!cancelled) setCategoriesLoading(false);
+      }
+    };
+
+    loadSavedCategories();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -78,11 +143,15 @@ export default function Navbar() {
     closeMobileMenu();
   };
 
-  const handleCategory = (category) => {
-    navigate(`/?category=${encodeURIComponent(category)}`);
-    closeMobileMenu();
-  };
+ const handleCategory = (category) => {
+  const slug = String(category)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
 
+  navigate(`/category/${encodeURIComponent(slug)}`);
+  closeMobileMenu();
+};
   const handleLogout = async () => {
     try {
       await logout();
@@ -144,11 +213,11 @@ export default function Navbar() {
       <header className="kj-header">
         {/* Main utility row */}
         <div className="kj-main-row">
-          <Link to="/" className="kj-brand" aria-label="Tanishka Wholesale Jewellery home">
-            <img src={logo} alt="Tanishka jewellery logo" className="kj-logo" />
+          <Link to="/" className="kj-brand" aria-label="Everything Wholesale Market home">
+            <span className="kj-logo-mark" aria-hidden="true">E</span>
             <span className="kj-brand-copy">
-              <span className="kj-brand-name">TANISHKA</span>
-              <span className="kj-brand-tagline">RETAIL &amp; WHOLESALE JEWELLERY</span>
+              <span className="kj-brand-name">EVERYTHING</span>
+              <span className="kj-brand-tagline">WHOLESALE MARKET</span>
             </span>
           </Link>
 
@@ -157,8 +226,8 @@ export default function Navbar() {
               type="search"
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search for jewellery, collections, designs..."
-              aria-label="Search jewellery"
+              placeholder="Search products, categories, brands..."
+              aria-label="Search products"
             />
             {/* <button type="submit" aria-label="Search">
               <FiSearch aria-hidden="true" />
@@ -191,7 +260,7 @@ export default function Navbar() {
         </div>
 
         {/* Desktop category navigation */}
-        <nav className="kj-category-nav" aria-label="Jewellery categories">
+        <nav className="kj-category-nav" aria-label="Product categories">
           <button type="button" className="kj-all-categories" onClick={() => handleCategory("All Categories")}>
             <FiMenu aria-hidden="true" />
             <span>All Categories</span>
@@ -199,9 +268,16 @@ export default function Navbar() {
           </button>
 
           <div className="kj-category-links">
-            {categories.map((category) => (
-              <button key={category} type="button" onClick={() => handleCategory(category)}>
-                {category}
+            {categoriesLoading ? (
+              <span className="kj-category-loading" aria-live="polite">Loading categories…</span>
+            ) : categories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => handleCategory(category.title)}
+                title={category.title}
+              >
+                {category.title}
               </button>
             ))}
           </div>
@@ -219,7 +295,7 @@ export default function Navbar() {
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
             placeholder="Search for jewellery..."
-            aria-label="Search jewellery"
+            aria-label="Search products"
           />
           <button type="submit" aria-label="Search">
             <FiSearch aria-hidden="true" />
@@ -243,10 +319,10 @@ export default function Navbar() {
         <div className="kj-mobile-inner">
           <div className="kj-mobile-top">
             <Link to="/" className="kj-mobile-brand" onClick={closeMobileMenu}>
-              <img src={logo} alt="" />
+              <span className="kj-logo-mark" aria-hidden="true">E</span>
               <span>
-                <strong>TANISHKA</strong>
-                <small>RETAIL &amp; WHOLESALE JEWELLERY</small>
+                <strong>EVERYTHING</strong>
+                <small>WHOLESALE MARKET</small>
               </span>
             </Link>
             <button type="button" className="kj-mobile-close" onClick={closeMobileMenu} aria-label="Close menu">
@@ -266,14 +342,20 @@ export default function Navbar() {
             </Link>
           </div>
 
-          <nav className="kj-mobile-nav" aria-label="Mobile jewellery categories">
+          <nav className="kj-mobile-nav" aria-label="Mobile product categories">
             <button type="button" className="kj-mobile-all" onClick={() => handleCategory("All Categories")}>
               <span><FiMenu aria-hidden="true" /> All Categories</span>
               <FiChevronDown aria-hidden="true" />
             </button>
-            {categories.map((category) => (
-              <button type="button" key={category} onClick={() => handleCategory(category)}>
-                {category}
+            {categoriesLoading ? (
+              <span className="kj-category-loading" aria-live="polite">Loading categories…</span>
+            ) : categories.map((category) => (
+              <button
+                type="button"
+                key={category.id}
+                onClick={() => handleCategory(category.title)}
+              >
+                {category.title}
               </button>
             ))}
             <button type="button" className="kj-mobile-offers" onClick={() => handleCategory("Offers")}>
@@ -286,14 +368,14 @@ export default function Navbar() {
           </nav>
 
           <div className="kj-mobile-wholesale">
-            <span className="kj-wholesale-kicker">FOR RETAILERS &amp; BOUTIQUES</span>
-            <strong>Discover wholesale jewellery</strong>
-            <p>Explore elegant designs for your business.</p>
+            <span className="kj-wholesale-kicker">FOR RETAILERS &amp; BULK BUYERS</span>
+            <strong>Everything you need, wholesale prices.</strong>
+            <p>Explore everyday essentials, home products, beauty, fashion and more.</p>
             <span className="kj-minimum-order">Minimum order value ₹2,500</span>
           </div>
 
           <div className="kj-mobile-footer">
-            <span>Delivering elegance across India</span>
+            <span>Delivering wholesale value across India</span>
             {!currentUser && (
               <Link to="/login" className="kj-mobile-login" onClick={closeMobileMenu}>
                 Login to view wholesale prices

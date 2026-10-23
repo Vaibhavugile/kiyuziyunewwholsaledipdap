@@ -1,49 +1,46 @@
-
 import "./topbar.css";
 
 export default function Topbar() {
   const messages = [
     {
       icon: "🚚",
-      text: "Wholesale Prices",
+      text: "Wholesale Prices on Everyday Essentials",
     },
     {
       icon: "◇",
-      text: "Anti-Tarnish Jewellery",
+      text: "Home, Fashion, Beauty & Lifestyle",
     },
     {
       icon: "♧",
-      text: "24×7 Support",
+      text: "Support When You Need It",
     },
     {
       icon: "✦",
-      text: "Login To View Wholesale Prices",
+      text: "Login to View Wholesale Prices",
     },
     {
       icon: "🚚",
-      text: "Delivering Elegance Across India",
+      text: "Wholesale Delivery Across India",
     },
     {
       icon: "◇",
-      text: "Minimum Order Value ₹2,500",
+      text: "Bulk Buying Made Easy",
     },
     {
       icon: "✧",
-      text: "100% Secure Payments",
+      text: "Secure Shopping & Payments",
     },
   ];
 
   return (
-    <div className="topbar">
+    <div className="topbar" aria-label="Everything Wholesale Market announcements">
       <div className="topbar-marquee">
         <div className="topbar-track">
           {[...messages, ...messages].map((item, index) => (
-            <div className="topbar-item" key={index}>
-              <span className="topbar-icon">{item.icon}</span>
-
+            <div className="topbar-item" key={`${item.text}-${index}`}>
+              <span className="topbar-icon" aria-hidden="true">{item.icon}</span>
               <span className="topbar-text">{item.text}</span>
-
-              <span className="topbar-dot">•</span>
+              <span className="topbar-dot" aria-hidden="true">•</span>
             </div>
           ))}
         </div>

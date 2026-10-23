@@ -1,73 +1,76 @@
-import React from "react";
-import { Link } from "react-router-dom";
-import {
-  FiArrowRight,
-  FiShield,
-  FiTruck,
-  FiAward,
-} from "react-icons/fi";
+import React, { useEffect, useState } from "react";
 import "./HeroSection.css";
 
-// Place HeroDesk.webp inside: src/assets/hero/HeroDesk.webp
-import heroDesk from "../assets/hero/H25.webp";
+import heroBannerOne from "../assets/hero/Everything Wholesale Marketplace Banner.png";
+import heroBannerTwo from "../assets/hero/Global Wholesale Marketplace Banner.png";
 
-const trustItems = [
-  { icon: FiAward, title: "Curated Designs", caption: "Styles your customers love" },
-  { icon: FiShield, title: "Quality Finishing", caption: "Made for everyday elegance" },
-  { icon: FiTruck, title: "Wholesale Orders", caption: "Delivering across India" },
+const banners = [
+  {
+    src: heroBannerOne,
+    alt: "Everything Wholesale Market — global wholesale marketplace and bulk-buying savings",
+  },
+  {
+    src: heroBannerTwo,
+    alt: "Everything Wholesale Market — product categories, wholesale deals and savings up to 90 percent",
+  },
 ];
 
+const SLIDE_INTERVAL = 5500;
+
 export default function HeroSection() {
+  const [activeIndex, setActiveIndex] = useState(1);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return undefined;
+
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % banners.length);
+    }, SLIDE_INTERVAL);
+
+    return () => window.clearInterval(timer);
+  }, [paused]);
+
   return (
-    <section className="hcr-section" aria-label="Tanishka wholesale jewellery">
-      <div
-        className="hcr-hero"
-        style={{ "--hcr-hero-image": `url("${heroDesk}")` }}
-      >
-        <div className="hcr-overlay" aria-hidden="true" />
-
-        <div className="hcr-content">
-          <p className="hcr-tagline">Premium Wholesale Jewellery</p>
-
-          <h1 className="hcr-title">
-            Elegance That
-            <br />
-            <span>Elevates Every</span>
-            <br />
-            Collection
-          </h1>
-
-          <p className="hcr-desc">
-            Discover exquisite anti-tarnish imitation jewellery for boutiques,
-            retailers and resellers. Beautiful designs, refined finishes and
-            wholesale service you can trust.
-          </p>
-
-          <div className="hcr-actions">
-            <Link to="/collections" className="hcr-btn hcr-btn-primary">
-              Explore Collections <FiArrowRight aria-hidden="true" />
-            </Link>
-            <Link to="/contact" className="hcr-btn hcr-btn-secondary">
-              Wholesale Enquiry
-            </Link>
-          </div>
-
-          <div className="hcr-trust-row" aria-label="Wholesale benefits">
-            {trustItems.map(({ icon: Icon, title, caption }) => (
-              <div className="hcr-trust-item" key={title}>
-                <Icon aria-hidden="true" />
-                <span>
-                  <strong>{title}</strong>
-                  <small>{caption}</small>
-                </span>
-              </div>
-            ))}
-          </div>
+    <section
+      className="hcr-section"
+      aria-label="Everything Wholesale Market banners"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
+      }}
+    >
+      <div className="hcr-banner-shell">
+        <div className="hcr-banner-stage">
+          {banners.map((banner, index) => (
+            <img
+              key={banner.src}
+              className={`hcr-banner-image${index === activeIndex ? " is-active" : ""}`}
+              src={banner.src}
+              alt={banner.alt}
+              fetchPriority={index === 1 ? "high" : "auto"}
+              loading={index === 1 ? "eager" : "lazy"}
+              decoding="async"
+              draggable="false"
+            />
+          ))}
         </div>
 
-        <div className="hcr-bottom-note">
-          <span className="hcr-note-line" />
-          <span>Timeless style. Wholesale value.</span>
+        <div className="hcr-banner-shine" aria-hidden="true" />
+
+        <div className="hcr-banner-controls" aria-label="Choose banner">
+          {banners.map((banner, index) => (
+            <button
+              key={banner.src}
+              type="button"
+              className={`hcr-banner-dot${index === activeIndex ? " is-active" : ""}`}
+              onClick={() => setActiveIndex(index)}
+              aria-label={`Show banner ${index + 1}`}
+              aria-pressed={index === activeIndex}
+            />
+          ))}
         </div>
       </div>
     </section>

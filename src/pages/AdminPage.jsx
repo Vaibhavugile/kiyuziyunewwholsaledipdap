@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   db,
   collection,
@@ -266,6 +267,11 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   const [productImportRows, setProductImportRows] = useState([]);
   const [productImportError, setProductImportError] = useState('');
   const [isProductImporting, setIsProductImporting] = useState(false);
+  const [categoryMasterFile, setCategoryMasterFile] = useState(null);
+  const [categoryMasterRows, setCategoryMasterRows] = useState([]);
+  const [categoryMasterError, setCategoryMasterError] = useState('');
+  const [isCategoryMasterUpdating, setIsCategoryMasterUpdating] = useState(false);
+  const [categoryMasterReport, setCategoryMasterReport] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [userOrderStats, setUserOrderStats] = useState({});
 
@@ -2134,6 +2140,215 @@ for (const product of newProducts) {
   };
 
 
+
+  // Convert category labels to stable URL-safe slugs (e.g. "Home & Kitchen" -> "home-kitchen").
+  const makeCategorySlug = (value) => String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const normalizeMasterMatchKey = (value) => String(value ?? '').trim().toLowerCase();
+
+  // Dealer SKUs commonly look like whl014_0002 while the store's productCode is 0002.
+  const getMasterSkuCode = (value) => {
+    const sku = String(value ?? '').trim();
+    if (!sku) return '';
+    const parts = sku.split(/[_-]/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1].toLowerCase() : sku.toLowerCase();
+  };
+
+  const handleCategoryMasterFileChange = async (event) => {
+    const file = event.target.files?.[0] || null;
+    setCategoryMasterFile(file);
+    setCategoryMasterRows([]);
+    setCategoryMasterError('');
+    setCategoryMasterReport(null);
+    if (!file) return;
+
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+      setCategoryMasterError('Upload the dealer master file as .xlsx, .xls, or .csv.');
+      return;
+    }
+
+    try {
+      let rows = [];
+      if (/\.csv$/i.test(file.name)) {
+        rows = parseProductImportCsv(await file.text());
+      } else {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheetName = workbook.SheetNames.includes('Items')
+          ? 'Items'
+          : workbook.SheetNames[0];
+        if (!sheetName) throw new Error('The workbook does not contain a worksheet.');
+        rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+          defval: '',
+          raw: false,
+        }).map((row) => Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value])
+        ));
+      }
+
+      const normalized = rows.map((row) => {
+        const lower = Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value])
+        );
+        return {
+          sku: String(lower.sku ?? '').trim(),
+          name: String(lower.name ?? '').trim(),
+          category: String(lower.category ?? '').trim(),
+        };
+      }).filter((row) => row.category && (row.sku || row.name));
+
+      if (!normalized.length) {
+        setCategoryMasterError('No usable rows found. The file needs SKU, name, and category columns.');
+        return;
+      }
+      if (!rows.some((row) => Object.keys(row).some((key) => String(key).trim().toLowerCase() === 'category'))) {
+        setCategoryMasterError('Could not find the category column in this file.');
+        return;
+      }
+      setCategoryMasterRows(normalized);
+    } catch (error) {
+      console.error('Could not read dealer category master:', error);
+      setCategoryMasterError('Could not read this file. Check that it contains an Items sheet with SKU and category columns.');
+    }
+  };
+
+  const handleApplyCategoryMaster = async (event) => {
+    event.preventDefault();
+    if (!selectedMainCollectionId) {
+      alert('Please select the main collection first.');
+      return;
+    }
+    if (!categoryMasterRows.length) {
+      alert('Please upload a valid dealer master file first.');
+      return;
+    }
+
+    if (!window.confirm(
+      `Update category and category slug on matching products and subcollections using ${categoryMasterRows.length} dealer master rows? This does not change prices, stock, images, or product IDs.`
+    )) return;
+
+    setIsCategoryMasterUpdating(true);
+    setCategoryMasterReport(null);
+    try {
+      const subcollectionsRef = collection(
+        db, 'collections', selectedMainCollectionId, 'subcollections'
+      );
+      const subSnap = await getDocs(subcollectionsRef);
+      const masterBySku = new Map();
+      const masterByCode = new Map();
+
+      categoryMasterRows.forEach((row) => {
+        const category = String(row.category || '').trim();
+        if (!category) return;
+        const categorySlug = makeCategorySlug(category);
+        const payload = { category, categorySlug };
+        const skuKey = normalizeMasterMatchKey(row.sku);
+        const codeKey = getMasterSkuCode(row.sku);
+        if (skuKey && !masterBySku.has(skuKey)) masterBySku.set(skuKey, payload);
+        if (codeKey && !masterByCode.has(codeKey)) masterByCode.set(codeKey, payload);
+      });
+
+      const operations = [];
+      let matchedProducts = 0;
+      let matchedSubcollections = 0;
+      let unmatchedProducts = 0;
+
+      for (const subDoc of subSnap.docs) {
+        const subData = subDoc.data() || {};
+        const destinations = ['products', 'appProducts'];
+        let matchedCategory = null;
+        const productSnaps = await Promise.all(destinations.map((destination) =>
+          getDocs(collection(
+            db, 'collections', selectedMainCollectionId, 'subcollections', subDoc.id, destination
+          ))
+        ));
+
+        const productDocs = productSnaps.flatMap((snapshot) =>
+          snapshot.docs.map((productDoc) => ({
+            ref: productDoc.ref,
+            data: productDoc.data() || {},
+          }))
+        );
+
+        // Prefer an exact SKU match; then match the product code against the final SKU segment.
+        for (const product of productDocs) {
+          const data = product.data;
+          const sku = normalizeMasterMatchKey(data.sku);
+          const code = normalizeMasterMatchKey(data.productCode || subData.productCode);
+          const categoryPayload =
+            (sku && masterBySku.get(sku)) ||
+            (code && masterByCode.get(code)) ||
+            (getMasterSkuCode(sku) && masterByCode.get(getMasterSkuCode(sku))) ||
+            null;
+
+          if (!categoryPayload) {
+            unmatchedProducts += 1;
+            continue;
+          }
+
+          matchedCategory = matchedCategory || categoryPayload;
+          operations.push({
+            ref: product.ref,
+            data: {
+              category: categoryPayload.category,
+              categorySlug: categoryPayload.categorySlug,
+              updatedAt: serverTimestamp(),
+            },
+          });
+          matchedProducts += 1;
+        }
+
+        // If a product in this one-product subcollection matched, stamp the same category on the parent.
+        if (!matchedCategory && subData.productCode) {
+          matchedCategory = masterByCode.get(normalizeMasterMatchKey(subData.productCode)) || null;
+        }
+        if (matchedCategory) {
+          operations.push({
+            ref: subDoc.ref,
+            data: {
+              category: matchedCategory.category,
+              categorySlug: matchedCategory.categorySlug,
+              updatedAt: serverTimestamp(),
+            },
+          });
+          matchedSubcollections += 1;
+        }
+      }
+
+      let writes = 0;
+      for (let offset = 0; offset < operations.length; offset += 450) {
+        const batch = writeBatch(db);
+        operations.slice(offset, offset + 450).forEach((operation) => {
+          batch.update(operation.ref, operation.data);
+        });
+        await batch.commit();
+        writes += Math.min(450, operations.length - offset);
+      }
+
+      setCategoryMasterReport({
+        matchedProducts,
+        matchedSubcollections,
+        unmatchedProducts,
+        writes,
+      });
+      alert(
+        `Category update complete. Updated ${matchedProducts} product document(s) and ${matchedSubcollections} subcollection(s).`
+      );
+      await fetchSubcollections();
+      if (selectedSubcollectionId) await fetchProducts();
+    } catch (error) {
+      console.error('Dealer category master update failed:', error);
+      alert(`Category update failed: ${error.message || 'Check the console and try again.'}`);
+    } finally {
+      setIsCategoryMasterUpdating(false);
+    }
+  };
+
   const handleProductImportFileChange = async (event) => {
     const file = event.target.files?.[0] || null;
     setProductImportFile(file);
@@ -3403,7 +3618,7 @@ for (const product of newProducts) {
   };
 
   // 🔑 IMPORTANT: Use the actual deployed URL you provided
-  const FIREBASE_CANCEL_ORDER_URL = "https://us-central1-jewellerywholesale-2e57c.cloudfunctions.net/cancelOrder";
+  const FIREBASE_CANCEL_ORDER_URL = "https://us-central1-tanishkaretail-4a7e1.cloudfunctions.net/cancelOrder";
 
   // Add this function inside your AdminPage component, next to handleUpdateOrderStatus
   const handleCancelOrder = async (orderId) => {
@@ -5355,6 +5570,55 @@ alert(
                         </div>
                         <button type="submit" disabled={isProductUploading} className="submit-all-button">
                           {isProductUploading ? 'Saving Product...' : 'Save Product'}
+                        </button>
+                      </form>
+                    )}
+
+                    {productEntryMode === 'import' && (
+                      <form
+                        onSubmit={handleApplyCategoryMaster}
+                        className="add-collection-form product-csv-import-form"
+                        style={{ marginBottom: 20 }}
+                      >
+                        <h3>Import Dealer Category Master</h3>
+                        <p>
+                          Upload the dealer's Excel master file. It reads the <strong>Items</strong> sheet and matches by SKU first, then by the product code at the end of the SKU. Matching category and category slug are written to both the product document and its parent subcollection.
+                        </p>
+                        <div className="form-group">
+                          <label htmlFor="category-master-file">Dealer master file (.xlsx, .xls, or .csv)</label>
+                          <input
+                            id="category-master-file"
+                            type="file"
+                            accept=".xlsx,.xls,.csv"
+                            onChange={handleCategoryMasterFileChange}
+                          />
+                        </div>
+                        {categoryMasterError && (
+                          <div className="product-import-error" role="alert">{categoryMasterError}</div>
+                        )}
+                        {categoryMasterFile && !categoryMasterError && (
+                          <div className="product-import-preview" role="status">
+                            <span className="product-import-preview-icon">✓</span>
+                            <div>
+                              <strong>{categoryMasterFile.name}</strong>
+                              <p>{categoryMasterRows.length.toLocaleString()} row(s) with a category ready to match.</p>
+                            </div>
+                          </div>
+                        )}
+                        {categoryMasterReport && (
+                          <div className="product-import-note" role="status">
+                            <strong>Last update:</strong> {categoryMasterReport.matchedProducts.toLocaleString()} product documents and {categoryMasterReport.matchedSubcollections.toLocaleString()} subcollections updated. {categoryMasterReport.unmatchedProducts.toLocaleString()} product document(s) did not match.
+                          </div>
+                        )}
+                        <div className="product-import-note">
+                          <strong>Safe update:</strong> only category, categorySlug, and updatedAt are changed. Prices, stock, images, product IDs, and pricing tiers remain unchanged. Review the selected main collection before applying.
+                        </div>
+                        <button
+                          type="submit"
+                          className="submit-all-button"
+                          disabled={isCategoryMasterUpdating || !categoryMasterRows.length || !selectedMainCollectionId}
+                        >
+                          {isCategoryMasterUpdating ? 'Updating Categories…' : `Update Categories (${categoryMasterRows.length.toLocaleString()} rows)`}
                         </button>
                       </form>
                     )}

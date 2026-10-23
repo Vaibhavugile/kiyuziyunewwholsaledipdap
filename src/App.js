@@ -67,6 +67,10 @@ import AdminResellerPayments from './pages/dropshipper/AdminResellerPayments';
 import AdminDailyOrders from "./pages/AdminDailyOrders";
 import ProductDetailsPage from './pages/ProductDetailsPage';
 import AdminHomepageSections from './pages/AdminHomepageSections';
+import BudgetProductsPage from "./pages/BudgetProductsPage";
+import TagProductsPage from "./pages/TagProductsPage";
+import DiscountProductsPage from "./pages/DiscountProductsPage";
+import CategoryPage from "./pages/CategoryPage";
 function App() {
     useEffect(() => {
     initMetaPixel();
@@ -105,6 +109,19 @@ function App() {
   path="/admin/daily-orders"
   element={<AdminDailyOrders />}
 />
+<Route
+  path="/budget/:budgetId"
+  element={<BudgetProductsPage />}
+/>
+<Route
+  path="/category/:categorySlug"
+  element={<CategoryPage />}
+/>
+<Route
+  path="/discount/:discount"
+  element={<DiscountProductsPage />}
+/>
+<Route path="/tag/:tagName" element={<TagProductsPage />} />
             <Route path="/custombill" element={<CustomBillingPage/>} />
             <Route path="/collections/:collectionId" element={<SubcollectionsPage />} />
             <Route path="/collections/:collectionId/all-products" element={<ProductsPage />} />            <Route path="/cart" element={<CartPage />} />

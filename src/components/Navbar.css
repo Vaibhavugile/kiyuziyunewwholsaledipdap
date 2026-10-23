@@ -1,37 +1,38 @@
-/* =========================================
-   TANISHKA — PREMIUM WHOLESALE NAVBAR
-   Maroon, antique gold and warm ivory
-========================================= */
+/* =========================================================
+   EVERYTHING WHOLESALE MARKET — PREMIUM RESPONSIVE NAVBAR
+   Brand colors: Wholesale Blue, Bold Red, White
+========================================================= */
 
 :root {
-  --kj-maroon: #65121d;
-  --kj-maroon-dark: #3f080f;
-  --kj-maroon-deep: #30070b;
-  --kj-gold: #a66b22;
-  --kj-gold-light: #d9b56e;
-  --kj-ivory: #fffaf2;
-  --kj-cream: #f8f0e4;
-  --kj-ink: #251714;
-  --kj-muted: #786b63;
-  --kj-border: rgba(101, 18, 29, 0.13);
-  --kj-shadow: 0 8px 28px rgba(50, 17, 12, 0.08);
+  --kj-maroon: #0b4c96;
+  --kj-maroon-dark: #08346a;
+  --kj-maroon-deep: #06264e;
+  --kj-gold: #ed1c24;
+  --kj-gold-light: #ff7479;
+  --kj-ivory: #ffffff;
+  --kj-cream: #f0f6ff;
+  --kj-ink: #172b46;
+  --kj-muted: #64748b;
+  --kj-border: rgba(11, 76, 150, 0.13);
+  --kj-shadow: 0 8px 28px rgba(8, 46, 104, 0.08);
 }
 
-/* Header container */
+/* =========================================================
+   HEADER
+========================================================= */
 
 .kj-header {
   position: sticky;
   top: 30px;
   z-index: 1000;
   width: 100%;
-  background: rgba(255, 252, 247, 0.98);
+  background: rgba(255, 255, 255, 0.98);
   color: var(--kj-ink);
   border-bottom: 1px solid var(--kj-border);
-  box-shadow: 0 3px 18px rgba(48, 7, 11, 0.035);
+  box-shadow: 0 3px 18px rgba(8, 46, 104, 0.035);
   box-sizing: border-box;
   font-family: Arial, Helvetica, sans-serif;
 }
-
 
 .kj-header *,
 .kj-mobile-menu *,
@@ -39,19 +40,28 @@
   box-sizing: border-box;
 }
 
-/* Main row: logo, search, account/wishlist/cart */
+/* =========================================================
+   MAIN HEADER ROW
+========================================================= */
+
 .kj-main-row {
   width: min(100%, 1480px);
   min-height: 76px;
   margin: 0 auto;
   padding: 12px 32px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.45fr) minmax(230px, 0.9fr);
+  grid-template-columns:
+    minmax(220px, 1fr)
+    minmax(260px, 1.45fr)
+    minmax(230px, 0.9fr);
   align-items: center;
   gap: 28px;
 }
 
-/* Brand */
+/* =========================================================
+   BRAND
+========================================================= */
+
 .kj-brand {
   display: inline-flex;
   align-items: center;
@@ -70,6 +80,31 @@
   flex: 0 0 auto;
 }
 
+.kj-logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  border-radius: 12px;
+  color: #ffffff;
+  background: linear-gradient(
+    145deg,
+    #ed1c24 0%,
+    #d90d1a 48%,
+    #0b4c96 49%,
+    #082e68 100%
+  );
+  box-shadow: 0 5px 13px rgba(8, 46, 104, 0.18);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 30px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
 .kj-brand-copy,
 .kj-mobile-brand > span {
   display: flex;
@@ -79,40 +114,47 @@
 }
 
 .kj-brand-name {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: clamp(20px, 1.7vw, 27px);
-  font-weight: 700;
+  font-weight: 900;
   line-height: 1;
-  letter-spacing: 1.3px;
+  letter-spacing: 1.1px;
   white-space: nowrap;
+  color: var(--kj-maroon-dark);
 }
 
 .kj-brand-tagline {
-  color: #7b4b35;
+  color: #315c87;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 8px;
+  font-weight: 700;
   line-height: 1.2;
   letter-spacing: 1.05px;
   white-space: nowrap;
 }
 
-/* Search */
+/* =========================================================
+   DESKTOP SEARCH
+========================================================= */
+
 .kj-search {
   display: flex;
   width: 100%;
   height: 43px;
   min-width: 0;
-  border: 1px solid #d9c9b9;
-  border-radius: 5px;
+  border: 1px solid #cfdeef;
+  border-radius: 7px;
   overflow: hidden;
-  background: #fffdfa;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  background: #ffffff;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .kj-search:focus-within,
 .kj-mobile-search:focus-within {
   border-color: var(--kj-gold);
-  box-shadow: 0 0 0 3px rgba(166, 107, 34, 0.1);
+  box-shadow: 0 0 0 3px rgba(237, 28, 36, 0.12);
 }
 
 .kj-search input,
@@ -130,7 +172,7 @@
 
 .kj-search input::placeholder,
 .kj-mobile-search input::placeholder {
-  color: #8a817a;
+  color: #8190a4;
   opacity: 1;
 }
 
@@ -143,10 +185,10 @@
   justify-content: center;
   border: 0;
   background: var(--kj-maroon);
-  color: #fffaf2;
+  color: #ffffff;
   font-size: 19px;
   cursor: pointer;
-  transition: background 180ms ease;
+  transition: background-color 180ms ease;
 }
 
 .kj-search button:hover,
@@ -154,7 +196,10 @@
   background: var(--kj-maroon-dark);
 }
 
-/* Account / wishlist / cart */
+/* =========================================================
+   ACCOUNT / WISHLIST / CART
+========================================================= */
+
 .kj-actions {
   display: flex;
   align-items: center;
@@ -180,7 +225,9 @@
   line-height: 1.1;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 180ms ease, transform 180ms ease;
+  transition:
+    color 180ms ease,
+    transform 180ms ease;
 }
 
 .kj-action > svg {
@@ -188,6 +235,7 @@
   height: 21px;
   stroke-width: 1.7;
   color: var(--kj-maroon-dark);
+  transition: color 180ms ease;
 }
 
 .kj-action:hover {
@@ -211,7 +259,10 @@
   max-width: 100%;
 }
 
-/* Account menu */
+/* =========================================================
+   ACCOUNT DROPDOWN
+========================================================= */
+
 .kj-account-wrap {
   position: relative;
   display: flex;
@@ -226,9 +277,9 @@
   min-width: 190px;
   padding: 7px;
   border: 1px solid var(--kj-border);
-  border-radius: 8px;
-  background: #fffdf9;
-  box-shadow: 0 14px 38px rgba(48, 7, 11, 0.16);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 14px 38px rgba(8, 46, 104, 0.16);
   animation: kjDropdownIn 160ms ease-out;
 }
 
@@ -237,13 +288,16 @@
   width: 100%;
   padding: 11px 12px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--kj-ink);
   text-align: left;
   text-decoration: none;
   font-size: 13px;
   cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 .kj-menu-item:hover {
@@ -252,21 +306,31 @@
 }
 
 @keyframes kjDropdownIn {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Second row: categories */
+/* =========================================================
+   DESKTOP CATEGORY NAVIGATION
+========================================================= */
+
 .kj-category-nav {
   min-height: 43px;
   width: 100%;
-  border-top: 1px solid rgba(101, 18, 29, 0.08);
+  border-top: 1px solid rgba(11, 76, 150, 0.08);
   display: flex;
   align-items: center;
   gap: clamp(12px, 2vw, 28px);
   padding: 0 32px;
   margin: 0 auto;
-  background: rgba(255, 250, 242, 0.92);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .kj-all-categories,
@@ -279,7 +343,7 @@
   flex: 0 0 auto;
   border: 0;
   background: transparent;
-  color: #291b17;
+  color: var(--kj-ink);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -309,6 +373,12 @@
   flex: 1;
   min-width: 0;
   gap: clamp(8px, 1.45vw, 22px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.kj-category-links::-webkit-scrollbar {
+  display: none;
 }
 
 .kj-category-links button {
@@ -338,32 +408,39 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--kj-maroon);
-  color: #fffaf2;
+  background: var(--kj-gold);
+  color: #ffffff;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
-/* Mobile search hidden on desktop */
+/* =========================================================
+   MOBILE SEARCH AND HAMBURGER
+========================================================= */
+
 .kj-mobile-search {
   display: none;
 }
 
-/* Hamburger hidden on desktop */
 .kj-hamburger {
   display: none;
 }
 
-/* Mobile drawer backdrop */
+/* =========================================================
+   MOBILE DRAWER BACKDROP
+========================================================= */
+
 .kj-mobile-backdrop {
   position: fixed;
   inset: 0;
   z-index: 1190;
-  background: rgba(28, 9, 7, 0.46);
+  background: rgba(8, 26, 50, 0.46);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 220ms ease, visibility 220ms ease;
+  transition:
+    opacity 220ms ease,
+    visibility 220ms ease;
 }
 
 .kj-mobile-backdrop.visible {
@@ -372,22 +449,28 @@
   pointer-events: auto;
 }
 
-/* Mobile drawer */
+/* =========================================================
+   MOBILE DRAWER
+========================================================= */
+
 .kj-mobile-menu {
   position: fixed;
   top: 0;
   right: 0;
   z-index: 1200;
   width: min(390px, 90vw);
+  height: 100vh;
   height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: #fffaf2;
+  background: #ffffff;
   color: var(--kj-ink);
-  box-shadow: -12px 0 40px rgba(30, 7, 8, 0.18);
+  box-shadow: -12px 0 40px rgba(8, 46, 104, 0.18);
   transform: translateX(105%);
   visibility: hidden;
-  transition: transform 280ms ease, visibility 280ms ease;
+  transition:
+    transform 280ms ease,
+    visibility 280ms ease;
 }
 
 .kj-mobile-menu.open {
@@ -401,6 +484,10 @@
   min-height: 100%;
   padding: 20px;
 }
+
+/* =========================================================
+   MOBILE DRAWER HEADER
+========================================================= */
 
 .kj-mobile-top {
   display: flex;
@@ -425,15 +512,26 @@
   object-fit: contain;
 }
 
+.kj-mobile-brand .kj-logo-mark {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  border-radius: 11px;
+  font-size: 28px;
+}
+
 .kj-mobile-brand strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 20px;
+  font-weight: 900;
   letter-spacing: 1px;
+  color: var(--kj-maroon-dark);
 }
 
 .kj-mobile-brand small {
-  color: #7b4b35;
+  color: #315c87;
   font-size: 7px;
+  font-weight: 700;
   letter-spacing: 0.7px;
 }
 
@@ -442,11 +540,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(101, 18, 29, 0.12);
-  border-radius: 5px;
-  background: transparent;
+  border: 1px solid rgba(11, 76, 150, 0.16);
+  border-radius: 7px;
+  background: #ffffff;
   color: var(--kj-maroon);
   cursor: pointer;
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
 }
 
 .kj-mobile-close {
@@ -455,6 +557,17 @@
   flex: 0 0 auto;
   font-size: 22px;
 }
+
+.kj-mobile-close:hover,
+.kj-hamburger:hover {
+  color: var(--kj-gold);
+  border-color: rgba(237, 28, 36, 0.35);
+  background: #fff5f5;
+}
+
+/* =========================================================
+   MOBILE ACCOUNT ACTIONS
+========================================================= */
 
 .kj-mobile-account-row {
   display: grid;
@@ -472,19 +585,33 @@
   gap: 7px;
   min-width: 0;
   padding: 12px 4px;
-  border: 1px solid rgba(101, 18, 29, 0.12);
-  border-radius: 6px;
-  background: #fffdf9;
+  border: 1px solid rgba(11, 76, 150, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
   color: var(--kj-maroon);
   text-decoration: none;
   font-size: 11px;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.kj-mobile-action:hover {
+  background: var(--kj-cream);
+  border-color: rgba(11, 76, 150, 0.25);
+  transform: translateY(-1px);
 }
 
 .kj-mobile-action svg {
   width: 20px;
   height: 20px;
 }
+
+/* =========================================================
+   MOBILE CATEGORY MENU
+========================================================= */
 
 .kj-mobile-nav {
   display: flex;
@@ -501,7 +628,7 @@
   min-height: 46px;
   padding: 12px 3px;
   border: 0;
-  border-bottom: 1px solid rgba(101, 18, 29, 0.09);
+  border-bottom: 1px solid rgba(11, 76, 150, 0.09);
   background: transparent;
   color: var(--kj-ink);
   text-align: left;
@@ -509,16 +636,20 @@
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  transition:
+    color 160ms ease,
+    padding-left 160ms ease;
 }
 
 .kj-mobile-nav > button:hover,
 .kj-mobile-nav > a:hover {
   color: var(--kj-gold);
+  padding-left: 7px;
 }
 
 .kj-mobile-nav .kj-mobile-all {
   color: var(--kj-maroon);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .kj-mobile-all > span {
@@ -531,8 +662,21 @@
   justify-content: flex-start !important;
   gap: 9px;
   color: var(--kj-maroon) !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
 }
+
+/* Category loading state */
+
+.kj-category-loading {
+  display: block;
+  padding: 12px 4px;
+  color: var(--kj-muted);
+  font-size: 12px;
+}
+
+/* =========================================================
+   MOBILE WHOLESALE PROMO CARD
+========================================================= */
 
 .kj-mobile-wholesale {
   display: flex;
@@ -540,27 +684,29 @@
   gap: 8px;
   margin-top: 20px;
   padding: 17px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--kj-maroon), var(--kj-maroon-dark));
-  color: #fffaf2;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0b4c96, #082e68);
+  color: #ffffff;
+  box-shadow: 0 8px 22px rgba(8, 46, 104, 0.14);
 }
 
 .kj-wholesale-kicker {
-  color: var(--kj-gold-light);
+  color: #ffb6b9;
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 1px;
 }
 
 .kj-mobile-wholesale strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 20px;
-  line-height: 1.2;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 19px;
+  line-height: 1.3;
 }
 
 .kj-mobile-wholesale p {
   margin: 0;
-  color: rgba(255, 250, 242, 0.85);
+  color: rgba(255, 255, 255, 0.86);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -568,11 +714,16 @@
 .kj-minimum-order {
   align-self: flex-start;
   padding: 6px 8px;
-  border: 1px solid rgba(217, 181, 110, 0.45);
-  border-radius: 4px;
-  color: #f4d99f;
+  border: 1px solid rgba(255, 116, 121, 0.45);
+  border-radius: 5px;
+  color: #ffd7d9;
   font-size: 10px;
+  font-weight: 700;
 }
+
+/* =========================================================
+   MOBILE FOOTER
+========================================================= */
 
 .kj-mobile-footer {
   display: flex;
@@ -587,19 +738,34 @@
 .kj-mobile-login {
   display: block;
   padding: 13px 14px;
-  border-radius: 5px;
+  border-radius: 7px;
   background: var(--kj-gold);
-  color: white;
+  color: #ffffff;
   text-align: center;
   text-decoration: none;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
+  box-shadow: 0 5px 14px rgba(237, 28, 36, 0.18);
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
 }
 
-/* Responsive desktop / tablet */
+.kj-mobile-login:hover {
+  background: #cf101b;
+  transform: translateY(-1px);
+}
+
+/* =========================================================
+   TABLET / SMALL DESKTOP
+========================================================= */
+
 @media (max-width: 1150px) {
   .kj-main-row {
-    grid-template-columns: minmax(190px, 0.9fr) minmax(230px, 1.2fr) minmax(190px, 0.8fr);
+    grid-template-columns:
+      minmax(190px, 0.9fr)
+      minmax(230px, 1.2fr)
+      minmax(190px, 0.8fr);
     gap: 18px;
     padding-left: 22px;
     padding-right: 22px;
@@ -626,8 +792,15 @@
   }
 }
 
-/* Tablet and mobile header */
+/* =========================================================
+   TABLET AND MOBILE HEADER
+========================================================= */
+
 @media (max-width: 880px) {
+  .kj-header {
+    top: 0;
+  }
+
   .kj-main-row {
     min-height: 68px;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -639,9 +812,15 @@
     font-size: 23px;
   }
 
-  .kj-logo {
+  .kj-logo,
+  .kj-logo-mark {
     width: 40px;
     height: 40px;
+  }
+
+  .kj-logo-mark {
+    flex-basis: 40px;
+    font-size: 28px;
   }
 
   .kj-search,
@@ -671,10 +850,13 @@
     width: calc(100% - 36px);
     height: 39px;
     margin: 0 18px 12px;
-    border: 1px solid #d9c9b9;
-    border-radius: 5px;
+    border: 1px solid #cfdeef;
+    border-radius: 7px;
     overflow: hidden;
-    background: #fffdfa;
+    background: #ffffff;
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease;
   }
 
   .kj-mobile-search input {
@@ -688,7 +870,10 @@
   }
 }
 
-/* Small mobile */
+/* =========================================================
+   SMALL MOBILE
+========================================================= */
+
 @media (max-width: 480px) {
   .kj-main-row {
     min-height: 62px;
@@ -700,9 +885,16 @@
     gap: 7px;
   }
 
-  .kj-logo {
+  .kj-logo,
+  .kj-logo-mark {
     width: 35px;
     height: 35px;
+  }
+
+  .kj-logo-mark {
+    flex-basis: 35px;
+    border-radius: 9px;
+    font-size: 25px;
   }
 
   .kj-brand-name {
@@ -730,9 +922,16 @@
   .kj-mobile-inner {
     padding: 16px;
   }
+
+  .kj-mobile-brand strong {
+    font-size: 18px;
+  }
 }
 
-/* Extra-small phones */
+/* =========================================================
+   EXTRA-SMALL PHONES
+========================================================= */
+
 @media (max-width: 350px) {
   .kj-brand-name {
     font-size: 18px;
@@ -742,9 +941,15 @@
     font-size: 6px;
   }
 
-  .kj-logo {
+  .kj-logo,
+  .kj-logo-mark {
     width: 32px;
     height: 32px;
+  }
+
+  .kj-logo-mark {
+    flex-basis: 32px;
+    font-size: 23px;
   }
 
   .kj-main-row {
@@ -757,9 +962,16 @@
     margin-left: 10px;
     margin-right: 10px;
   }
+
+  .kj-mobile-inner {
+    padding: 13px;
+  }
 }
 
-/* Keyboard focus */
+/* =========================================================
+   KEYBOARD ACCESSIBILITY
+========================================================= */
+
 .kj-header a:focus-visible,
 .kj-header button:focus-visible,
 .kj-mobile-menu a:focus-visible,
@@ -768,12 +980,18 @@
   outline-offset: 3px;
 }
 
-/* Lock page scrolling when the drawer is open */
+/* =========================================================
+   LOCK PAGE SCROLL WHEN DRAWER IS OPEN
+========================================================= */
+
 body.kj-menu-open {
   overflow: hidden;
 }
 
-/* Reduced motion */
+/* =========================================================
+   REDUCED MOTION
+========================================================= */
+
 @media (prefers-reduced-motion: reduce) {
   .kj-header *,
   .kj-mobile-menu *,

@@ -1,7 +1,8 @@
 export const MAIN_DOMAINS = [
   "kiyuziyuofficial.com",
   "wholesaleantitarnishjewellery.com",
- "tanishkaretail-4a7e1.web.app"
+ "tanishkaretail-4a7e1.web.app",
+ "everythingwholesalemarket.com"
 ];
 
 export const getCleanDomain = () => {
