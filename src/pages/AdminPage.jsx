@@ -446,6 +446,61 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
   const [isCartPreviewReceipt, setIsCartPreviewReceipt] = useState(false);
 
+  // 3-inch (80mm) thermal receipt styling. Print only the receipt, not the admin page.
+  useEffect(() => {
+    const styleId = "everything-wholesale-thermal-print-style";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .offline-pos-invoice-print { color: #111827; }
+      .offline-pos-invoice { box-sizing: border-box; width: 76mm; max-width: 100%; margin: 0 auto; padding: 2mm; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; font-size: 10px; line-height: 1.3; }
+      .offline-pos-invoice * { box-sizing: border-box; }
+      .offline-pos-invoice-header { text-align: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px dashed #555; }
+      .offline-pos-invoice-header h2 { font-size: 15px; line-height: 1.15; font-weight: 800; letter-spacing: .25px; margin: 0 0 5px; overflow-wrap: anywhere; }
+      .offline-pos-invoice-header p { margin: 2px 0; font-size: 9px; }
+      .offline-pos-invoice-top { padding: 0 0 7px; margin-bottom: 7px; border-bottom: 1px dashed #777; overflow-wrap: anywhere; }
+      .offline-pos-invoice-top p { display: flex; gap: 4px; align-items: flex-start; margin: 3px 0; font-size: 9px; }
+      .offline-pos-invoice-top p strong { flex: 0 0 auto; }
+      .offline-pos-invoice-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9px; }
+      .offline-pos-invoice-table th { padding: 4px 1px; border-bottom: 1px solid #333; text-align: right; font-size: 8px; }
+      .offline-pos-invoice-table th:first-child { text-align: left; width: 48%; }
+      .offline-pos-invoice-table th:nth-child(2) { width: 10%; }
+      .offline-pos-invoice-table th:nth-child(3) { width: 19%; }
+      .offline-pos-invoice-table th:nth-child(4) { width: 23%; }
+      .offline-pos-invoice-table td { padding: 5px 1px; border-bottom: 1px dashed #bbb; text-align: right; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
+      .offline-pos-invoice-table td:first-child { text-align: left; }
+      .offline-pos-invoice-table td strong { display: block; font-size: 9px; line-height: 1.25; }
+      .offline-pos-receipt-item-meta { display: block; margin-top: 2px; font-size: 7.5px; line-height: 1.2; color: #333; }
+      .offline-pos-invoice-summary { margin-top: 9px; padding-top: 5px; border-top: 1px dashed #555; }
+      .offline-pos-invoice-summary > div { display: flex; justify-content: space-between; gap: 5px; margin: 4px 0; font-size: 9px; }
+      .offline-pos-invoice-summary > div span:first-child { max-width: 65%; }
+      .offline-pos-invoice-summary > div span:last-child { text-align: right; white-space: nowrap; }
+      .offline-pos-invoice-net-total { padding: 7px 5px; margin-top: 6px !important; border-top: 1px solid #111; border-bottom: 1px solid #111; font-size: 12px !important; font-weight: 800; }
+      .offline-pos-invoice-words { margin: 8px 0; font-size: 8px; overflow-wrap: anywhere; }
+      .offline-pos-receipt-thanks { text-align: center; padding: 8px 0; border-top: 1px dashed #777; border-bottom: 1px dashed #777; font-size: 9px; font-weight: 700; }
+      .offline-pos-invoice-footer { display: block; margin-top: 7px; font-size: 8px; }
+      .offline-pos-invoice-footer p { margin: 2px 0; overflow-wrap: anywhere; }
+      .offline-pos-invoice-signature { margin-top: 8px; text-align: center; }
+      .offline-pos-invoice-signature-line { padding-top: 12px; border-top: 1px solid #777; width: 65%; margin: 0 auto; }
+      .offline-pos-invoice-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+      @page { size: 80mm auto; margin: 2mm; }
+      @media print {
+        html, body { width: 80mm !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+        body * { visibility: hidden !important; }
+        .offline-pos-invoice-print, .offline-pos-invoice-print * { visibility: visible !important; }
+        .offline-pos-invoice-actions { display: none !important; }
+        .offline-pos-invoice-print { position: absolute !important; left: 0 !important; top: 0 !important; width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+        #invoice-pdf.offline-pos-invoice { width: 76mm !important; max-width: 76mm !important; margin: 0 auto !important; padding: 1mm !important; box-shadow: none !important; border: 0 !important; }
+        .offline-pos-invoice table, .offline-pos-invoice tr, .offline-pos-invoice td, .offline-pos-invoice th { page-break-inside: avoid !important; }
+        .offline-pos-invoice-header, .offline-pos-invoice-top, .offline-pos-invoice-summary, .offline-pos-invoice-footer { break-inside: avoid !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { style.remove(); };
+  }, []);
+
   // Add this line with your other useState calls at the top of the component:
   const [offlineSelections, setOfflineSelections] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -1456,6 +1511,268 @@ useEffect(() => {
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [pdfWidth, pdfHeight], compress: true });
     pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST");
     return pdf.output("blob");
+  };
+
+  // Print the receipt in an isolated window so storefront/admin CSS cannot
+  // hide or stretch it. The printer driver should be set to an 80 mm roll.
+  const printThermalReceipt = () => {
+    const receipt = document.getElementById("invoice-pdf");
+    if (!receipt) {
+      alert("Receipt is not ready. Please close and open it again.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=420,height=800");
+    if (!printWindow) {
+      alert("Your browser blocked the print window. Allow pop-ups for this site and try again.");
+      return;
+    }
+
+    const receiptHtml = receipt.outerHTML;
+    const printDocument = `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Everything Wholesale Market Receipt</title>
+          <style>
+            * { box-sizing: border-box; }
+            @page { margin: 0 !important; }
+            html, body {
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 80mm !important;
+              min-width: 80mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              background: #fff !important;
+              color: #111 !important;
+              overflow: visible !important;
+            }
+            body { position: relative !important; top: 0 !important; left: 0 !important; }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            #invoice-pdf {
+              position: relative !important;
+              top: 0 !important;
+              left: 0 !important;
+              display: block !important;
+              width: 76mm !important;
+              min-width: 76mm !important;
+              max-width: 76mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              margin-top: 0 !important;
+              margin-right: auto !important;
+              margin-bottom: 0 !important;
+              margin-left: 0 !important;
+              padding: 1mm 2mm !important;
+              border: 0 !important;
+              box-shadow: none !important;
+              font-family: Arial, Helvetica, sans-serif !important;
+              font-size: 12px !important;
+              line-height: 1.35 !important;
+              font-weight: 600 !important;
+              text-rendering: geometricPrecision !important;
+              overflow: visible !important;
+              break-inside: auto !important;
+              page-break-inside: auto !important;
+            }
+            .offline-pos-invoice-header {
+              text-align: center;
+              padding-bottom: 7px;
+              margin-bottom: 7px;
+              border-bottom: 1px dashed #555;
+            }
+            .offline-pos-invoice-header h2 {
+              margin: 0 0 5px;
+              font-size: 16px;
+              line-height: 1.15;
+              overflow-wrap: anywhere;
+            }
+            .offline-pos-invoice-header p { margin: 2px 0; font-size: 10px; font-weight: 700; }
+            .offline-pos-invoice-top {
+              display: block;
+              margin: 7px 0;
+              padding-bottom: 7px;
+              border-bottom: 1px dashed #777;
+              overflow-wrap: anywhere;
+            }
+            .offline-pos-invoice-top p { display: block; margin: 3px 0; font-size: 10.5px; font-weight: 600; }
+            .offline-pos-invoice-table {
+              width: 100%;
+              margin: 7px 0;
+              border-collapse: collapse;
+              table-layout: fixed;
+              font-size: 10px;
+            }
+            .offline-pos-invoice-table th,
+            .offline-pos-invoice-table td {
+              padding: 4px 1px;
+              border-bottom: 1px dashed #aaa;
+              vertical-align: top;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            }
+            .offline-pos-invoice-table th {
+              border-top: 1px dashed #777;
+              text-align: right;
+              font-size: 9px;
+              font-weight: 700;
+            }
+            .offline-pos-invoice-table th:first-child,
+            .offline-pos-invoice-table td:first-child { width: 48%; text-align: left; }
+            .offline-pos-invoice-table th:nth-child(2),
+            .offline-pos-invoice-table td:nth-child(2) { width: 10%; text-align: center; }
+            .offline-pos-invoice-table th:nth-child(3),
+            .offline-pos-invoice-table td:nth-child(3) { width: 19%; text-align: right; }
+            .offline-pos-invoice-table th:nth-child(4),
+            .offline-pos-invoice-table td:nth-child(4) { width: 23%; text-align: right; }
+            .offline-pos-receipt-item-meta { display: block; margin-top: 3px; font-size: 9px; line-height: 1.25; font-weight: 500; }
+            .offline-pos-invoice-summary { margin-top: 8px; padding-top: 5px; border-top: 1px dashed #555; }
+            .offline-pos-invoice-summary > div {
+              display: flex;
+              justify-content: space-between;
+              gap: 4px;
+              margin: 4px 0;
+              font-size: 10px;
+              font-weight: 600;
+            }
+            .offline-pos-invoice-summary > div span:first-child { max-width: 65%; }
+            .offline-pos-invoice-summary > div span:last-child { text-align: right; white-space: nowrap; }
+            .offline-pos-invoice-net-total {
+              display: flex;
+              justify-content: space-between;
+              gap: 4px;
+              padding: 7px 2px;
+              margin-top: 6px;
+              border-top: 1px solid #111;
+              border-bottom: 1px solid #111;
+              font-size: 13px;
+              font-weight: 900;
+            }
+            .offline-pos-invoice-words { margin: 7px 0; font-size: 9px; font-weight: 600; overflow-wrap: anywhere; }
+            .offline-pos-receipt-thanks {
+              margin: 10px 0 5px;
+              padding: 7px 0;
+              border-top: 1px dashed #777;
+              border-bottom: 1px dashed #777;
+              text-align: center;
+              font-size: 10px;
+              font-weight: 800;
+            }
+            .offline-pos-invoice-footer { margin-top: 6px; font-size: 7px; }
+            .offline-pos-invoice-footer p { margin: 2px 0; overflow-wrap: anywhere; }
+            @page { margin: 0; }
+            @media print {
+              html, body {
+                width: 80mm !important;
+                min-width: 80mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+              }
+              #invoice-pdf {
+                width: 76mm !important;
+                max-width: 76mm !important;
+                margin: 0 !important;
+                padding: 2mm !important;
+                overflow: visible !important;
+              }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            }
+          </style>
+        </head>
+        <body>${receiptHtml}</body>
+      </html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(printDocument);
+    printWindow.document.close();
+
+    // Chromium/Edge does not reliably support "80mm auto" as a roll page.
+    // Measure the actual receipt and set a custom page height so totals stay
+    // on the same thermal receipt instead of being moved to a second page.
+    let thermalPrintStarted = false;
+    const prepareAndPrint = async () => {
+      if (thermalPrintStarted || printWindow.closed) return;
+      thermalPrintStarted = true;
+      try {
+        if (printWindow.document.fonts && printWindow.document.fonts.ready) {
+          await printWindow.document.fonts.ready;
+        }
+
+        await new Promise((resolve) => {
+          printWindow.requestAnimationFrame(() => {
+            printWindow.requestAnimationFrame(resolve);
+          });
+        });
+
+        const printedReceipt = printWindow.document.getElementById("invoice-pdf");
+        if (!printedReceipt) {
+          printWindow.close();
+          alert("Could not prepare the thermal receipt. Please try again.");
+          return;
+        }
+
+        const contentHeightPx = Math.ceil(
+          Math.max(
+            printedReceipt.scrollHeight,
+            printedReceipt.getBoundingClientRect().height
+          )
+        );
+
+        // CSS pixels -> mm at 96dpi, plus a small tail margin for the cutter.
+        const heightMm = Math.max(45, Math.ceil((contentHeightPx * 25.4 / 96) + 2));
+        const pageStyle = printWindow.document.createElement("style");
+        pageStyle.id = "dynamic-thermal-page-size";
+        pageStyle.textContent = `
+          @page { size: 80mm ${heightMm}mm; margin: 0; }
+          @media print {
+            html, body {
+              width: 80mm !important;
+              height: ${heightMm}mm !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: visible !important;
+            }
+            body { position: relative !important; top: 0 !important; left: 0 !important; }
+            #invoice-pdf {
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
+              height: auto !important;
+              margin: 0 !important;
+              padding-top: 0 !important;
+            }
+          }
+        `;
+        printWindow.document.head.appendChild(pageStyle);
+
+        printWindow.focus();
+        printWindow.onafterprint = () => printWindow.close();
+        printWindow.print();
+      } catch (error) {
+        console.error("Thermal receipt print preparation failed:", error);
+        printWindow.close();
+        alert("Could not prepare the thermal receipt. Please try again.");
+      }
+    };
+
+    // Wait for the new window to finish parsing; use a fallback in case load
+    // already fired before the handler was attached.
+    if (printWindow.document.readyState === "complete") {
+      prepareAndPrint();
+    } else {
+      printWindow.addEventListener("load", prepareAndPrint, { once: true });
+      printWindow.setTimeout(prepareAndPrint, 500);
+    }
   };
 
   const downloadInvoicePDF = async () => {
@@ -6627,7 +6944,7 @@ alert(
         {activeTab === 'offline-billing' &&
           ROLE_PERMISSIONS[currentUserRole]?.includes("offline-billing") && (
             <div className="offline-pos-root">
-              <div className="offline-pos-header"><div><span className="offline-pos-eyebrow">TANISHKA · STORE COUNTER</span><h2>Offline Billing</h2><p>Fast checkout · live stock · product-wise GST · printable invoice</p></div><span className="offline-pos-live"><i /> POS READY</span></div>
+              <div className="offline-pos-header"><div><span className="offline-pos-eyebrow">EVERYTHING WHOLESALE MARKET · STORE COUNTER</span><h2>Offline Billing</h2><p>Fast checkout · live stock · product-wise GST · printable invoice</p></div><span className="offline-pos-live"><i /> POS READY</span></div>
 
               {/* 🔑 HIDDEN BARCODE INPUT (USB / Bluetooth Scanner) */}
               <input
@@ -6902,7 +7219,7 @@ alert(
                               <div className="offline-pos-cart-controls">
                                 {/* NEW: Display line total */}
                                 <span className="offline-pos-cart-info offline-pos-line-total">
-                                  <strong className="offline-pos-line-total-amount">₹{lineTotal.toFixed(2)}</strong>
+                                  <strong className="offline-pos-line-total-amount">Rs. {lineTotal.toFixed(2)}</strong>
                                 </span>
 
                                 <button type="button" aria-label={`Decrease quantity of ${item.productName}`} onClick={() => handleOfflineRemoveFromCart(item.id)} className="offline-pos-qty-btn">−</button>
@@ -7103,7 +7420,7 @@ alert(
       {showInvoice && invoiceData && (
         <div className="offline-pos-invoice-print">
           <div className="offline-pos-invoice-actions">
-            <button type="button" onClick={() => window.print()}>Print current cart</button>
+            <button type="button" onClick={printThermalReceipt}>Print 3-inch receipt</button>
             <button type="button" onClick={downloadInvoicePDF}>Download receipt PDF</button>
             <button type="button" onClick={() => { setShowInvoice(false); setIsCartPreviewReceipt(false); }}>Close</button>
           </div>
@@ -7111,23 +7428,20 @@ alert(
 
             {/* ================= HEADER (CENTER) ================= */}
             <div className="offline-pos-invoice-header">
-              <h2>TANISHKA IMITATION JEWELLERY</h2>
-              <p>Streets Of Europe, Hinjewadi, Pune</p>
-              <p>Pune, PIN CODE-412101.</p>
-              <p>Phone :- +91 78978 97441</p>
-              <p><strong>GSTN :</strong> 27CRAPA0906N1Z0</p>
+              <h2>EVERYTHING WHOLESALE MARKET</h2>
+              <p>3-INCH THERMAL SALES RECEIPT</p>
+              <p><strong>Seller GSTIN:</strong> Not configured</p>
             </div>
 
             {/* ========== INVOICE + CUSTOMER INFO (LEFT / TOP) ========== */}
             <div className="offline-pos-invoice-top">
-              <p><strong>Invoice No :</strong> {invoiceData.invoiceNumber}</p>
-              <p><strong>Date :</strong> {invoiceData.invoiceDate.toLocaleDateString()}</p>
-              <p><strong>Customer :</strong> {invoiceData.customer.fullName || 'Walk-in Customer'}</p>
-              <p><strong>Mobile :</strong> {invoiceData.customer.phoneNumber || '—'}</p>
-              {invoiceData.customer.email && <p><strong>Email :</strong> {invoiceData.customer.email}</p>}
-              <p><strong>Address :</strong> {[invoiceData.customer.addressLine1, invoiceData.customer.addressLine2, invoiceData.customer.city, invoiceData.customer.state, invoiceData.customer.pincode].filter(Boolean).join(', ') || '—'}</p>
-              <p><strong>GSTN No :</strong> {invoiceData.customer.gst || 'N/A'}</p>
-              <p><strong>Payment :</strong> {invoiceData.paymentMethod || 'N/A'}</p>
+              <p><strong>Receipt:</strong> {invoiceData.invoiceNumber}</p>
+              <p><strong>Date:</strong> {invoiceData.invoiceDate.toLocaleString('en-IN')}</p>
+              <p><strong>Customer:</strong> {invoiceData.customer.fullName || 'Walk-in Customer'}</p>
+              {invoiceData.customer.phoneNumber && <p><strong>Mobile:</strong> {invoiceData.customer.phoneNumber}</p>}
+              {invoiceData.customer.addressLine1 && <p><strong>Address:</strong> {[invoiceData.customer.addressLine1, invoiceData.customer.addressLine2, invoiceData.customer.city, invoiceData.customer.state, invoiceData.customer.pincode].filter(Boolean).join(', ')}</p>}
+              {invoiceData.customer.gst && <p><strong>Customer GSTIN:</strong> {invoiceData.customer.gst}</p>}
+              <p><strong>Payment:</strong> {invoiceData.paymentMethod || 'Cash'}</p>
             </div>
 
             {/* Compact thermal-receipt item list */}
@@ -7141,12 +7455,12 @@ alert(
                       <td>
                         <strong>{item.productName || "Item"}</strong>
                         <small className="offline-pos-receipt-item-meta">Code: {item.productCode || "—"}</small>
-                        <small className="offline-pos-receipt-item-meta">GST {Number(item.gstRate || 0)}% · {item.gstType || "exclusive"}: ₹{Number(item.gstAmount || 0).toFixed(2)}</small>
+                        <small className="offline-pos-receipt-item-meta">GST {Number(item.gstRate || 0)}% · {item.gstType || "exclusive"}: Rs. {Number(item.gstAmount || 0).toFixed(2)}</small>
                         {item.variation?.size && <small className="offline-pos-receipt-item-meta">Variant: {item.variation.size}</small>}
                       </td>
                       <td>{Number(item.quantity || 0)}</td>
-                      <td>₹{Number(item.price || 0).toFixed(2)}</td>
-                      <td>₹{lineTotal.toFixed(2)}</td>
+                      <td>Rs. {Number(item.price || 0).toFixed(2)}</td>
+                      <td>Rs. {lineTotal.toFixed(2)}</td>
                     </tr>
                   );
                 })}
@@ -7156,30 +7470,36 @@ alert(
             {/* ================= TOTALS (RIGHT) ================= */}
             <div className="offline-pos-invoice-summary">
               <div>
-                <span>Total :</span>
-                <span>₹{invoiceData.subtotal.toFixed(2)}</span>
+                <span>Subtotal:</span>
+                <span>Rs. {Number(invoiceData.subtotal || 0).toFixed(2)}</span>
               </div>
+              {Number(invoiceData.gstAmount || 0) > 0 && (
+                <div>
+                  <span>Total GST:</span>
+                  <span>Rs. {Number(invoiceData.gstAmount || 0).toFixed(2)}</span>
+                </div>
+              )}
               {Number(invoiceData.includedGstAmount || 0) > 0 && (
                 <div>
                   <span>GST included in item prices :</span>
-                  <span>₹{Number(invoiceData.includedGstAmount || 0).toFixed(2)}</span>
+                  <span>Rs. {Number(invoiceData.includedGstAmount || 0).toFixed(2)}</span>
                 </div>
               )}
               {Number(invoiceData.gstAddedToTotal || 0) > 0 && (
                 <div>
                   <span>GST added (exclusive items) :</span>
-                  <span>₹{Number(invoiceData.gstAddedToTotal || 0).toFixed(2)}</span>
+                  <span>Rs. {Number(invoiceData.gstAddedToTotal || 0).toFixed(2)}</span>
                 </div>
               )}
               {invoiceData.shippingFee > 0 && (
   <div>
     <span>Shipping :</span>
-    <span>₹{invoiceData.shippingFee.toFixed(2)}</span>
+    <span>Rs. {Number(invoiceData.shippingFee || 0).toFixed(2)}</span>
   </div>
 )}
               <div className="offline-pos-invoice-net-total">
                 <span>Net Total :</span>
-                <span>₹{invoiceData.total.toFixed(2)}</span>
+                <span>Rs. {Number(invoiceData.total || 0).toFixed(2)}</span>
               </div>
             </div>
 
@@ -7198,8 +7518,8 @@ alert(
               </div>
 
               <div className="offline-pos-invoice-signature">
-                <p>For TANISHKA IMITATION JEWELLERY</p>
-                <div className="offline-pos-invoice-signature-line">Receiver's Signature</div>
+                <p><strong>EVERYTHING WHOLESALE MARKET</strong></p>
+                <div className="offline-pos-invoice-signature-line">Thank you. Visit again!</div>
               </div>
             </div>
 
