@@ -296,6 +296,7 @@ const [variantSelectionProduct, setVariantSelectionProduct] = useState(null);
   // States for modal display
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedLowStockProduct, setSelectedLowStockProduct] = useState(null);
+  const [printOrderAfterRender, setPrintOrderAfterRender] = useState(false);
 
   // NEW: States for order search and date filtering
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -859,16 +860,9 @@ const [isShippingApplied, setIsShippingApplied] = useState(false);
       return { ...prevPricing, [type]: updatedTiers };
     });
   };
-  useEffect(() => {
-    if (showInvoice && invoiceData && !isCartPreviewReceipt) {
-      // Small delay ensures DOM + styles are fully rendered
-      const timer = setTimeout(() => {
-        window.print();
-      }, 300);
-
-      return () => clearTimeout(timer);
-    }
-  }, [showInvoice, invoiceData, isCartPreviewReceipt]);
+  // Do not call window.print() on the AdminPage itself. Thermal receipts must
+  // print only through printThermalReceipt() in its isolated 80 mm window;
+  // printing the parent page causes the entire admin UI to paginate (dozens of sheets).
 
   // --- Utility Functions ---
   const handleImageChange = (e, setImageFile) => {
@@ -4994,6 +4988,83 @@ alert(
     }
   };
 
+  // Convert a saved storefront/offline order into the same 80 mm thermal receipt
+  // data structure used by offline billing, then print automatically after render.
+  const handlePrintOrder = (order) => {
+    if (!order) return;
+    const billing = order.billingInfo || order.customer || {};
+    const rawItems = Array.isArray(order.items) ? order.items : (Array.isArray(order.products) ? order.products : []);
+    if (!rawItems.length) {
+      alert("This order has no product items to print.");
+      return;
+    }
+
+    const receiptItems = rawItems.map((item, index) => {
+      const quantity = Number(item.quantity ?? item.qty ?? 1) || 0;
+      const price = Number(item.priceAtTimeOfOrder ?? item.price ?? item.unitPrice ?? item.salePrice ?? 0) || 0;
+      const gstAmount = Number(item.gstAmount ?? item.taxAmount ?? 0) || 0;
+      return {
+        productId: item.productId || item.id || `item-${index + 1}`,
+        productName: item.productName || item.name || item.title || "Item",
+        productCode: item.productCode || item.sku || item.code || "N/A",
+        quantity,
+        price,
+        gstRate: Number(item.gstRate ?? item.gstPercentage ?? 0) || 0,
+        gstType: item.gstType || item.taxType || "exclusive",
+        gstAmount,
+        variation: item.variation || item.variant || null,
+      };
+    });
+
+    const itemSubtotal = receiptItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const itemGst = receiptItems.reduce((sum, item) => sum + item.gstAmount, 0);
+    const orderGst = Number(order.gstAmount ?? order.totalGst ?? itemGst) || 0;
+    const addedGst = Number(order.gstAddedToTotal ?? order.gstAdded ?? receiptItems.reduce((sum, item) => sum + (item.gstType === "exclusive" ? item.gstAmount : 0), 0)) || 0;
+    const includedGst = Math.max(0, orderGst - addedGst);
+    const subtotal = Number(order.subtotal ?? order.itemsSubtotal ?? itemSubtotal) || 0;
+    const shippingFee = Number(order.shippingFee ?? order.shipping ?? 0) || 0;
+    const total = Number(order.totalAmount ?? order.total ?? (subtotal + addedGst + shippingFee)) || 0;
+    let invoiceDate = new Date();
+    const createdAt = order.createdAt || order.orderDate || order.created_at;
+    if (createdAt?.toDate && typeof createdAt.toDate === "function") invoiceDate = createdAt.toDate();
+    else if (createdAt) { const parsedDate = new Date(createdAt); if (!Number.isNaN(parsedDate.getTime())) invoiceDate = parsedDate; }
+
+    setIsCartPreviewReceipt(false);
+    setInvoiceData({
+      customer: {
+        fullName: billing.fullName || billing.name || billing.customerName || "Walk-in Customer",
+        email: billing.email || billing.emailAddress || "",
+        phoneNumber: billing.phoneNumber || billing.phone || billing.mobile || "",
+        addressLine1: billing.addressLine1 || billing.address || billing.street || "",
+        addressLine2: billing.addressLine2 || "",
+        city: billing.city || "",
+        state: billing.state || "",
+        pincode: billing.pincode || billing.postalCode || billing.zip || "",
+        gst: billing.gst || billing.gstin || billing.GSTIN || "",
+      },
+      items: receiptItems,
+      subtotal,
+      gstRate: null,
+      shippingFee,
+      gstAmount: orderGst,
+      gstAddedToTotal: addedGst,
+      includedGstAmount: Number(order.includedGstAmount ?? order.gstIncluded ?? includedGst) || 0,
+      paymentMethod: order.paymentMethod || order.paymentInfo?.method || "N/A",
+      total,
+      invoiceDate,
+      invoiceNumber: order.id || order.orderId || "ORDER",
+    });
+    setShowInvoice(true);
+    setPrintOrderAfterRender(true);
+  };
+
+  useEffect(() => {
+    if (!printOrderAfterRender || !showInvoice || !invoiceData) return;
+    setPrintOrderAfterRender(false);
+    // Let React commit the invoice markup before opening the isolated print window.
+    requestAnimationFrame(() => requestAnimationFrame(() => printThermalReceipt()));
+  }, [printOrderAfterRender, showInvoice, invoiceData]);
+
   // Build a receipt from the CURRENT cart only. This does not create an order or update stock.
   const handlePrintCurrentCart = () => {
     const currentItems = Object.values(pricedOfflineCart || {});
@@ -6590,8 +6661,16 @@ alert(
                               <p>Contact: <strong>{order.billingInfo?.phoneNumber || ''}</strong></p>
                               <p>Name: <strong>{order.billingInfo?.fullName || ''}</strong></p>
 
-                              <p>Total: <strong>₹{order.totalAmount.toFixed(2)}</strong></p>
+                              <p>Total: <strong>₹{Number(order.totalAmount ?? order.total ?? 0).toFixed(2)}</strong></p>
                               <p>Status: <span className={`order-status status-${order.status ? order.status.toLowerCase() : 'pending'}`}>{order.status}</span></p>
+                              <button
+                                type="button"
+                                className="order-print-receipt-btn"
+                                onClick={(event) => { event.stopPropagation(); handlePrintOrder(order); }}
+                                style={{ marginTop: 8, padding: "7px 12px", border: 0, borderRadius: 6, background: "#166534", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+                              >
+                                🖨️ Print 3-inch receipt
+                              </button>
                             </li>
                           ))}
                       </ul>
@@ -7429,8 +7508,7 @@ alert(
             {/* ================= HEADER (CENTER) ================= */}
             <div className="offline-pos-invoice-header">
               <h2>EVERYTHING WHOLESALE MARKET</h2>
-              <p>3-INCH THERMAL SALES RECEIPT</p>
-              <p><strong>Seller GSTIN:</strong> Not configured</p>
+              <p><strong>Seller GSTIN:</strong>27CRAPA0906N1Z0</p>
             </div>
 
             {/* ========== INVOICE + CUSTOMER INFO (LEFT / TOP) ========== */}
@@ -7439,8 +7517,6 @@ alert(
               <p><strong>Date:</strong> {invoiceData.invoiceDate.toLocaleString('en-IN')}</p>
               <p><strong>Customer:</strong> {invoiceData.customer.fullName || 'Walk-in Customer'}</p>
               {invoiceData.customer.phoneNumber && <p><strong>Mobile:</strong> {invoiceData.customer.phoneNumber}</p>}
-              {invoiceData.customer.addressLine1 && <p><strong>Address:</strong> {[invoiceData.customer.addressLine1, invoiceData.customer.addressLine2, invoiceData.customer.city, invoiceData.customer.state, invoiceData.customer.pincode].filter(Boolean).join(', ')}</p>}
-              {invoiceData.customer.gst && <p><strong>Customer GSTIN:</strong> {invoiceData.customer.gst}</p>}
               <p><strong>Payment:</strong> {invoiceData.paymentMethod || 'Cash'}</p>
             </div>
 
